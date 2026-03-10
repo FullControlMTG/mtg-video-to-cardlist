@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MTG Card Scanner</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── Header ─────────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-left">
+      <span class="logo">&#9830; MTG Card Scanner</span>
+      <span class="status-dot" id="ws-dot" title="WebSocket status"></span>
+      <div class="camera-select-wrap">
+        <label class="camera-label" for="camera-select">&#x1F4F7;</label>
+        <select id="camera-select" title="Select camera">
+          <option value="">Loading cameras…</option>
+        </select>
+      </div>
+    </div>
+    <div class="header-right">
+      <input
+        id="search-input"
+        type="search"
+        placeholder="Search card by name…"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <div id="search-results" class="search-dropdown" aria-live="polite"></div>
+    </div>
+  </header>
+
+  <!-- ── Main layout ────────────────────────────────────────────── -->
+  <div class="layout">
+
+    <!-- Left: Video + Detected cards -->
+    <div class="pane pane-left">
+      <section class="video-section">
+        <div class="section-title">
+          Live Scan
+          <span class="badge" id="scan-badge">scanning…</span>
+        </div>
+        <div class="video-wrapper">
+          <img id="video-feed" src="/video" alt="Video feed" />
+        </div>
+      </section>
+
+      <section class="detected-section">
+        <div class="section-title">
+          Detected This Session
+          <button class="btn-ghost" id="clear-detected-btn" title="Clear detected list">Clear</button>
+        </div>
+        <div class="detected-grid" id="detected-grid">
+          <p class="empty-hint">Cards recognised by the camera will appear here.</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- Right: Decklist -->
+    <div class="pane pane-right">
+      <div class="deck-header">
+        <span class="section-title">Decklist</span>
+        <div class="deck-counts">
+          <span id="main-count">0</span> main &nbsp;/&nbsp;
+          <span id="side-count">0</span> side
+        </div>
+        <div class="zone-tabs">
+          <button class="zone-tab active" data-zone="main">Main</button>
+          <button class="zone-tab" data-zone="side">Sideboard</button>
+        </div>
+      </div>
+
+      <div class="decklist-scroll" id="decklist-scroll">
+        <div id="decklist-main" class="decklist-zone active-zone"></div>
+        <div id="decklist-side" class="decklist-zone" style="display:none"></div>
+      </div>
+
+      <!-- Export -->
+      <div class="export-bar">
+        <span class="export-label">Export:</span>
+        <button class="btn-export" data-fmt="moxfield">Moxfield</button>
+        <button class="btn-export" data-fmt="mtga">MTGA</button>
+        <button class="btn-export" data-fmt="mtgo">MTGO</button>
+        <button class="btn-export" data-fmt="text">Plain Text</button>
+        <button class="btn-danger" id="clear-deck-btn">Clear Deck</button>
+      </div>
+    </div>
+
+  </div><!-- /.layout -->
+
+</div><!-- /#app -->
+
+<!-- ── Card detail modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-label="Card detail">
+  <div class="modal">
+    <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<!-- ── Export modal ───────────────────────────────────────────── -->
+<div class="modal-overlay" id="export-overlay" role="dialog" aria-modal="true" aria-label="Export">
+  <div class="modal modal-export">
+    <div class="modal-export-header">
+      <span id="export-title">Export</span>
+      <button class="modal-close" id="export-close">&times;</button>
+    </div>
+    <textarea id="export-text" readonly spellcheck="false"></textarea>
+    <div class="export-actions">
+      <button class="btn-primary" id="copy-btn">Copy to Clipboard</button>
+      <button class="btn-ghost" id="download-btn">Download .txt</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
