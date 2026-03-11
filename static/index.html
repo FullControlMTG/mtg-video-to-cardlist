@@ -20,6 +20,7 @@
           <option value="">Loading cameras…</option>
         </select>
       </div>
+      <button class="btn-help" id="help-btn" title="Help &amp; instructions">?</button>
     </div>
     <div class="header-right">
       <input
@@ -154,6 +155,41 @@
         <textarea id="settings-notes" rows="3" placeholder="Optional description…"></textarea>
       </label>
       <button class="btn-primary" id="settings-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Help modal -->
+<div class="modal-overlay" id="help-overlay" role="dialog" aria-modal="true" aria-label="Help">
+  <div class="modal modal-help">
+    <button class="modal-close" id="help-close" aria-label="Close">&times;</button>
+    <h2 class="settings-title">How to use MTG Card Scanner</h2>
+    <div class="help-body">
+      <h3>Setup</h3>
+      <ul>
+        <li>Select your camera from the dropdown in the top bar.</li>
+        <li>Position the camera so that cards appear right-side up in the feed. The scanner reads the card name from the top-left corner, so orientation matters.</li>
+      </ul>
+      <h3>Scanning cards</h3>
+      <ul>
+        <li>Hold a card flat and face-up in front of the camera. A plain, contrasting background works best.</li>
+        <li>The scanner reads the <strong>top-left name strip</strong> of the card — make sure it is unobstructed and in focus.</li>
+        <li>Avoid glare on the card face. Tilting the card slightly away from the light source helps.</li>
+        <li>Detection works best when only one card is in frame at a time.</li>
+        <li>Recognised cards appear in the <em>Detected This Session</em> panel. Click <strong>+ Add</strong> to add one to your decklist, or click the card image for more details.</li>
+        <li>If a card was mistakenly detected, click the <strong>&times;</strong> button to dismiss it. It can be re-detected on the next scan.</li>
+      </ul>
+      <h3>Building your decklist</h3>
+      <ul>
+        <li>Use the search bar to look up and add any card by name.</li>
+        <li>Switch between <strong>Main</strong> and <strong>Sideboard</strong> tabs to organise your list.</li>
+        <li>Click a card row in the decklist to open its detail view where you can adjust the quantity or zone.</li>
+        <li>Click the ⚙ icon to set a deck name, format, and notes.</li>
+      </ul>
+      <h3>Exporting</h3>
+      <ul>
+        <li>Use the export buttons at the bottom of the decklist to copy or download your list in Moxfield, MTGA, MTGO, or plain-text format.</li>
+      </ul>
     </div>
   </div>
 </div>

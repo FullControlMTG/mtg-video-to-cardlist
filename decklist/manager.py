@@ -20,7 +20,7 @@ FORMATS = [
 ]
 
 
-class DeckMeta:
+class DeckMetadata:
     __slots__ = ("name", "format", "commander", "notes")
 
     def __init__(
@@ -44,7 +44,7 @@ class DeckMeta:
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "DeckMeta":
+    def from_dict(cls, d: dict) -> "DeckMetadata":
         return cls(
             name      = d.get("name", "My Deck"),
             format    = d.get("format", ""),
@@ -98,7 +98,7 @@ class DecklistManager:
     def __init__(self) -> None:
         self._main: OrderedDict[str, DeckEntry] = OrderedDict()
         self._side: OrderedDict[str, DeckEntry] = OrderedDict()
-        self._meta: DeckMeta = DeckMeta()
+        self._meta: DeckMetadata = DeckMetadata()
         self._load()
 
     def _load(self) -> None:
@@ -113,7 +113,7 @@ class DecklistManager:
                 e = DeckEntry.from_dict(d)
                 self._side[e.name] = e
             if "meta" in data:
-                self._meta = DeckMeta.from_dict(data["meta"])
+                self._meta = DeckMetadata.from_dict(data["meta"])
             log.info("Loaded decklist: %d main, %d side.", len(self._main), len(self._side))
         except Exception as exc:
             log.warning("Could not load decklist: %s", exc)
@@ -131,10 +131,10 @@ class DecklistManager:
         except Exception as exc:
             log.warning("Could not save decklist: %s", exc)
 
-    def get_meta(self) -> DeckMeta:
+    def get_meta(self) -> DeckMetadata:
         return self._meta
 
-    def set_meta(self, **kwargs) -> DeckMeta:
+    def set_meta(self, **kwargs) -> DeckMetadata:
         for k, v in kwargs.items():
             if hasattr(self._meta, k):
                 setattr(self._meta, k, v)

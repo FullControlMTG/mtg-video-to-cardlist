@@ -24,6 +24,9 @@ const modalBody     = $('modal-body');
 const exportOverlay = $('export-overlay');
 const exportTitle   = $('export-title');
 const exportText    = $('export-text');
+const paneRight     = $('pane-right');
+const deckCollapsed = $('deck-collapsed');
+const helpOverlay   = $('help-overlay');
 
 function debounce(fn, ms) {
   let t;
@@ -104,10 +107,22 @@ function renderDetectedCard(name, cardData) {
     <img src="${escHtml(img)}" alt="${escHtml(name)}" loading="lazy"
          onerror="this.style.visibility='hidden'" />
     <div class="card-label">${escHtml(name)}</div>
+    <button class="detected-card-dismiss" aria-label="Dismiss ${escHtml(name)}">&times;</button>
     <div class="add-overlay">
       <button class="add-overlay-btn" aria-label="Add ${escHtml(name)} to deck">+ Add</button>
     </div>
   `;
+
+  const dismissBtn = div.querySelector('.detected-card-dismiss');
+  dismissBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    state.detectedCards.delete(name);
+    div.remove();
+    if (!detectedGrid.querySelector('.detected-card')) {
+      detectedGrid.innerHTML = '<p class="empty-hint">Cards recognised by the camera will appear here.</p>';
+    }
+    scanBadge.textContent = state.detectedCards.size ? `${state.detectedCards.size} found` : 'scanning…';
+  });
 
   const addBtn = div.querySelector('.add-overlay-btn');
   const doAdd = async e => {
@@ -117,7 +132,10 @@ function renderDetectedCard(name, cardData) {
     setTimeout(() => { addBtn.textContent = '+ Add'; }, 1200);
   };
   addBtn.addEventListener('click', doAdd);
-  div.addEventListener('click', doAdd);
+  div.addEventListener('click', e => {
+    if (e.target === dismissBtn || e.target === addBtn) return;
+    doAdd(e);
+  });
 
   detectedGrid.appendChild(div);
 }
@@ -393,22 +411,6 @@ $('clear-deck-btn').addEventListener('click', async () => {
 
 const cameraSelect = $('camera-select');
 
-async function loadCameras() {
-  try {
-    const resp = await fetch('/api/cameras');
-    if (!resp.ok) return;
-    const { cameras, current } = await resp.json();
-
-    cameraSelect.innerHTML = cameras.length
-      ? cameras.map(c =>
-          `<option value="${c.index}">${c.name} (${c.resolution})</option>`
-        ).join('')
-      : '<option value="">No cameras found</option>';
-
-    cameraSelect.value = String(current);
-  } catch { /* ignore */ }
-}
-
 cameraSelect.addEventListener('change', async () => {
   const source = parseInt(cameraSelect.value, 10);
   if (isNaN(source)) return;
@@ -492,6 +494,43 @@ function updateDeckTitle(name) {
   if (el) el.textContent = name || 'Decklist';
 }
 
+$('toggle-deck-btn').addEventListener('click', () => {
+  paneRight.style.display = 'none';
+  deckCollapsed.style.display = 'flex';
+});
+
+$('show-deck-btn').addEventListener('click', () => {
+  paneRight.style.display = '';
+  deckCollapsed.style.display = 'none';
+});
+
+$('help-btn').addEventListener('click', () => helpOverlay.classList.add('open'));
+$('help-close').addEventListener('click', () => helpOverlay.classList.remove('open'));
+helpOverlay.addEventListener('click', e => {
+  if (e.target === helpOverlay) helpOverlay.classList.remove('open');
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && helpOverlay.classList.contains('open'))
+    helpOverlay.classList.remove('open');
+});
+
 connectWS();
 loadDeck();
+
+async function loadCameras() {
+  try {
+    const resp = await fetch('/api/cameras');
+    if (!resp.ok) return;
+    const { cameras, current } = await resp.json();
+
+    cameraSelect.innerHTML = cameras.length
+      ? cameras.map(c =>
+          `<option value="${c.index}">${c.name} (${c.resolution})</option>`
+        ).join('')
+      : '<option value="">No cameras found</option>';
+
+    cameraSelect.value = String(current);
+  } catch { /* ignore */ }
+}
+
 loadCameras();

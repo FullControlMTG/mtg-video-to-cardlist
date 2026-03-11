@@ -49,6 +49,20 @@ body {
 
 .camera-select-wrap { display: flex; align-items: center; gap: 5px; }
 .camera-label { font-size: 1rem; line-height: 1; cursor: default; user-select: none; }
+
+.btn-help {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-help:hover { color: var(--accent); border-color: var(--accent); }
 #camera-select {
   padding: 4px 8px;
   border-radius: var(--radius);
@@ -253,6 +267,27 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.detected-card-dismiss {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.65);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+  z-index: 2;
+}
+.detected-card:hover .detected-card-dismiss { opacity: 1; }
+.detected-card-dismiss:hover { background: var(--danger); }
+
 .detected-card .add-overlay {
   position: absolute;
   inset: 0;
@@ -277,31 +312,44 @@ body {
 
 /* ── Decklist ────────────────────────────────────────────────────── */
 .deck-header {
-  padding: 10px 16px 0;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px;
 }
-.deck-header .section-title { flex: 1; min-width: 0; }
+.deck-header-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+}
+.deck-header-top {
+  justify-content: space-between;
+  padding-bottom: 4px;
+}
+.deck-header-row + .deck-header-row { padding-top: 0; }
+.deck-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.deck-header-actions { display: flex; gap: 4px; align-items: center; }
 .btn-icon {
   padding: 2px 6px;
   font-size: 1rem;
   line-height: 1;
-  opacity: 0.6;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: color 0.15s;
 }
-.btn-icon:hover { opacity: 1; }
+.btn-icon:hover { color: var(--text); }
 .deck-counts {
   font-size: 0.78rem;
   color: var(--text-muted);
-  padding: 2px 0 8px;
 }
-.zone-tabs {
-  display: flex;
-  gap: 2px;
-}
+.deck-tabs-row { padding-top: 0; padding-bottom: 0; gap: 2px; }
 .zone-tab {
   padding: 5px 14px;
   border: none;
@@ -314,6 +362,27 @@ body {
   transition: color 0.15s, border-color 0.15s;
 }
 .zone-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.deck-collapsed {
+  display: flex;
+  align-items: center;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+.deck-collapsed button {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  padding: 16px 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  transition: color 0.15s;
+}
+.deck-collapsed button:hover { color: var(--accent); }
 
 .decklist-scroll {
   flex: 1;
@@ -382,14 +451,15 @@ body {
 /* ── Export bar ──────────────────────────────────────────────────── */
 .export-bar {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 10px 14px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 .export-label { font-size: 0.78rem; color: var(--text-muted); flex-shrink: 0; }
+.export-buttons { display: flex; gap: 4px; flex-wrap: wrap; }
 
 .btn-export {
   padding: 5px 10px;
@@ -594,6 +664,20 @@ body {
 .settings-field input:focus,
 .settings-field select:focus,
 .settings-field textarea:focus { border-color: var(--accent); }
+
+/* ── Help modal ──────────────────────────────────────────────────── */
+.modal-help { max-width: 520px; }
+.help-body { display: flex; flex-direction: column; gap: 10px; font-size: 0.85rem; line-height: 1.6; }
+.help-body h3 {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.help-body ul { padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.help-body li { color: var(--text); }
+.help-body strong { color: var(--accent); font-weight: 600; }
 
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {
