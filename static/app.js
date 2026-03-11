@@ -1,15 +1,13 @@
 'use strict';
 
-// ── State ─────────────────────────────────────────────────────────
 const state = {
-  detectedCards: new Map(), // name → card data (or {name} placeholder)
+  detectedCards: new Map(),
   activeZone: 'main',
   deck: { main: [], side: [], total_main: 0, total_side: 0 },
   ws: null,
   currentModalCard: null,
 };
 
-// ── DOM refs ──────────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
 
 const wsDot         = $('ws-dot');
@@ -27,7 +25,6 @@ const exportOverlay = $('export-overlay');
 const exportTitle   = $('export-title');
 const exportText    = $('export-text');
 
-// ── Utility ───────────────────────────────────────────────────────
 function debounce(fn, ms) {
   let t;
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
@@ -41,7 +38,6 @@ function escHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-// ── WebSocket ─────────────────────────────────────────────────────
 function connectWS() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -75,15 +71,12 @@ function connectWS() {
   };
 }
 
-// ── Detected cards ────────────────────────────────────────────────
 async function handleDetected(cards) {
   for (const c of cards) {
     if (!c.name || state.detectedCards.has(c.name)) continue;
 
-    // Placeholder so we don't fetch again on rapid duplicates
     state.detectedCards.set(c.name, { name: c.name });
 
-    // Fetch full card data from our API
     let cardData = null;
     try {
       const resp = await fetch(`/api/card/${encodeURIComponent(c.name)}`);
@@ -100,7 +93,6 @@ async function handleDetected(cards) {
 }
 
 function renderDetectedCard(name, cardData) {
-  // Remove the empty-hint placeholder
   const hint = detectedGrid.querySelector('.empty-hint');
   if (hint) hint.remove();
 
@@ -117,11 +109,15 @@ function renderDetectedCard(name, cardData) {
     </div>
   `;
 
-  div.querySelector('.add-overlay-btn').addEventListener('click', e => {
+  const addBtn = div.querySelector('.add-overlay-btn');
+  const doAdd = async e => {
     e.stopPropagation();
-    openCardModal(cardData);
-  });
-  div.addEventListener('click', () => openCardModal(cardData));
+    await addCard(name, 1, state.activeZone);
+    addBtn.textContent = '✓ Added';
+    setTimeout(() => { addBtn.textContent = '+ Add'; }, 1200);
+  };
+  addBtn.addEventListener('click', doAdd);
+  div.addEventListener('click', doAdd);
 
   detectedGrid.appendChild(div);
 }
@@ -132,7 +128,6 @@ $('clear-detected-btn').addEventListener('click', () => {
   scanBadge.textContent = 'scanning…';
 });
 
-// ── Decklist ──────────────────────────────────────────────────────
 async function loadDeck() {
   try {
     const resp = await fetch('/api/cards');
@@ -175,7 +170,6 @@ function renderZone(zone, entries) {
     </div>
   `).join('');
 
-  // Row click → card detail modal
   el.querySelectorAll('.deck-row').forEach(row => {
     row.addEventListener('click', e => {
       if (e.target.classList.contains('deck-row-remove')) return;
@@ -184,7 +178,6 @@ function renderZone(zone, entries) {
     });
   });
 
-  // Remove button: decrement by 1
   el.querySelectorAll('.deck-row-remove').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
@@ -195,7 +188,6 @@ function renderZone(zone, entries) {
   });
 }
 
-// Zone tabs
 document.querySelectorAll('.zone-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.zone-tab').forEach(t => t.classList.remove('active'));
@@ -206,7 +198,6 @@ document.querySelectorAll('.zone-tab').forEach(tab => {
   });
 });
 
-// ── Search ────────────────────────────────────────────────────────
 const _doSearch = debounce(async () => {
   const q = searchInput.value.trim();
   if (q.length < 2) {
@@ -225,7 +216,7 @@ const _doSearch = debounce(async () => {
 searchInput.addEventListener('input', _doSearch);
 
 searchInput.addEventListener('blur', () => {
-  // Delay so clicks on dropdown register first
+  // Delay so clicks on dropdown items register before the dropdown closes
   setTimeout(() => searchResults.classList.remove('open'), 200);
 });
 
@@ -233,7 +224,6 @@ searchInput.addEventListener('focus', () => {
   if (searchResults.children.length) searchResults.classList.add('open');
 });
 
-// Close search on Escape
 searchInput.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     searchResults.classList.remove('open');
@@ -248,7 +238,6 @@ function renderSearchResults(results) {
     return;
   }
 
-  // Build a name → data map for click handlers
   const byName = Object.fromEntries(results.map(c => [c.name, c]));
 
   searchResults.innerHTML = results.map(c => `
@@ -283,7 +272,6 @@ function renderSearchResults(results) {
   });
 }
 
-// ── Card modal ────────────────────────────────────────────────────
 function openCardModal(cardData) {
   state.currentModalCard = cardData;
 
@@ -320,7 +308,6 @@ function openCardModal(cardData) {
     closeModal();
   });
 
-  // Allow Enter key to submit
   $('modal-count').addEventListener('keydown', e => {
     if (e.key === 'Enter') $('modal-add-btn').click();
   });
@@ -344,7 +331,6 @@ document.addEventListener('keydown', e => {
   }
 });
 
-// ── Add card ──────────────────────────────────────────────────────
 async function addCard(name, count = 1, zone = 'main') {
   try {
     const resp = await fetch('/api/cards', {
@@ -356,14 +342,13 @@ async function addCard(name, count = 1, zone = 'main') {
       console.error('Add card error:', await resp.text());
       return;
     }
-    // Deck update arrives via WS; also refresh directly in case WS is slow
+    // Also refresh directly in case the WS deck_update is delayed
     await loadDeck();
   } catch (err) {
     console.error('Add card failed:', err);
   }
 }
 
-// ── Export ────────────────────────────────────────────────────────
 document.querySelectorAll('.btn-export').forEach(btn => {
   btn.addEventListener('click', async () => {
     const fmt = btn.dataset.fmt;
@@ -400,14 +385,12 @@ $('download-btn').addEventListener('click', () => {
   URL.revokeObjectURL(a.href);
 });
 
-// ── Clear deck ────────────────────────────────────────────────────
 $('clear-deck-btn').addEventListener('click', async () => {
   if (!confirm('Clear the entire decklist? This cannot be undone.')) return;
   await fetch('/api/deck/clear', { method: 'POST' });
   await loadDeck();
 });
 
-// ── Camera selection ──────────────────────────────────────────────
 const cameraSelect = $('camera-select');
 
 async function loadCameras() {
@@ -438,7 +421,77 @@ cameraSelect.addEventListener('change', async () => {
   } catch { /* ignore */ }
 });
 
-// ── Init ──────────────────────────────────────────────────────────
+const settingsOverlay = $('settings-overlay');
+const settingsFormat  = $('settings-format');
+const settingsCmdrRow = $('settings-commander-row');
+
+async function openSettings() {
+  try {
+    const resp = await fetch('/api/deck');
+    if (!resp.ok) return;
+    const meta = await resp.json();
+
+    $('settings-name').value      = meta.name      || '';
+    $('settings-format').value    = meta.format    || '';
+    $('settings-commander').value = meta.commander || '';
+    $('settings-notes').value     = meta.notes     || '';
+
+    if (settingsFormat.options.length <= 1) {
+      (meta.formats || []).forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = opt.textContent = f;
+        settingsFormat.appendChild(opt);
+      });
+    }
+
+    toggleCmdrRow();
+    settingsOverlay.classList.add('open');
+  } catch { /* ignore */ }
+}
+
+function toggleCmdrRow() {
+  const fmt = (settingsFormat.value || '').toLowerCase();
+  const needsCmdr = ['commander','brawl','historic brawl','oathbreaker'].includes(fmt);
+  settingsCmdrRow.style.display = needsCmdr ? '' : 'none';
+}
+
+settingsFormat.addEventListener('change', toggleCmdrRow);
+
+$('settings-save').addEventListener('click', async () => {
+  const body = {
+    name:      $('settings-name').value.trim(),
+    format:    $('settings-format').value,
+    commander: $('settings-commander').value.trim(),
+    notes:     $('settings-notes').value.trim(),
+  };
+  try {
+    await fetch('/api/deck', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    settingsOverlay.classList.remove('open');
+    updateDeckTitle(body.name);
+  } catch { /* ignore */ }
+});
+
+$('settings-close').addEventListener('click', () => settingsOverlay.classList.remove('open'));
+settingsOverlay.addEventListener('click', e => {
+  if (e.target === settingsOverlay) settingsOverlay.classList.remove('open');
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && settingsOverlay.classList.contains('open'))
+    settingsOverlay.classList.remove('open');
+});
+
+$('settings-btn').addEventListener('click', openSettings);
+
+function updateDeckTitle(name) {
+  const el = $('deck-name-display');
+  if (el) el.textContent = name || 'Decklist';
+}
+
 connectWS();
 loadDeck();
 loadCameras();

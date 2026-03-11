@@ -1,13 +1,3 @@
-"""
-MTG Card Scanner — entry point.
-
-Run with:
-    python main.py
-
-Or directly:
-    uvicorn api.app:app --host 127.0.0.1 --port 8000 --reload
-"""
-
 import asyncio
 import logging
 import sys
@@ -28,7 +18,6 @@ log = logging.getLogger("mtg_scanner")
 def main() -> None:
     log.info("Starting MTG Card Scanner on http://%s:%d", HOST, PORT)
 
-    # Open browser after a short delay so the server has time to bind
     async def open_browser() -> None:
         await asyncio.sleep(1.5)
         webbrowser.open(f"http://{HOST}:{PORT}")

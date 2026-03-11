@@ -1,17 +1,3 @@
-"""
-Decklist management and export.
-
-The decklist is split into a main deck and a sideboard.
-All state is persisted to DECKLIST_FILE automatically.
-
-Export formats:
-  - text      : "4 Lightning Bolt" (universal)
-  - moxfield  : same as text (Moxfield accepts plain text)
-  - mtga      : Arena format with set/collector number where available
-  - mtgo      : MTGO .dek compatible plain text
-  - arena     : explicit "Deck" / "Sideboard" headers for Arena import
-"""
-
 from __future__ import annotations
 
 import json
@@ -26,6 +12,49 @@ log = logging.getLogger(__name__)
 
 Zone = Literal["main", "side"]
 ExportFormat = Literal["text", "moxfield", "mtga", "mtgo", "arena"]
+
+FORMATS = [
+    "Standard", "Pioneer", "Modern", "Legacy", "Vintage",
+    "Commander", "Pauper", "Penny Dreadful", "Historic", "Alchemy",
+    "Brawl", "Historic Brawl", "Oathbreaker", "Premodern", "Old School",
+]
+
+
+class DeckMeta:
+    __slots__ = ("name", "format", "commander", "notes")
+
+    def __init__(
+        self,
+        name: str = "My Deck",
+        format: str = "",       # noqa: A002
+        commander: str = "",
+        notes: str = "",
+    ) -> None:
+        self.name      = name
+        self.format    = format
+        self.commander = commander
+        self.notes     = notes
+
+    def to_dict(self) -> dict:
+        return {
+            "name":      self.name,
+            "format":    self.format,
+            "commander": self.commander,
+            "notes":     self.notes,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "DeckMeta":
+        return cls(
+            name      = d.get("name", "My Deck"),
+            format    = d.get("format", ""),
+            commander = d.get("commander", ""),
+            notes     = d.get("notes", ""),
+        )
+
+    @property
+    def is_commander_format(self) -> bool:
+        return self.format.lower() in ("commander", "brawl", "historic brawl", "oathbreaker")
 
 
 class DeckEntry:
@@ -67,14 +96,10 @@ class DeckEntry:
 
 class DecklistManager:
     def __init__(self) -> None:
-        # Ordered dicts preserve insertion order for display
         self._main: OrderedDict[str, DeckEntry] = OrderedDict()
         self._side: OrderedDict[str, DeckEntry] = OrderedDict()
+        self._meta: DeckMeta = DeckMeta()
         self._load()
-
-    # ------------------------------------------------------------------
-    # Persistence
-    # ------------------------------------------------------------------
 
     def _load(self) -> None:
         if not DECKLIST_FILE.exists():
@@ -87,6 +112,8 @@ class DecklistManager:
             for d in data.get("side", []):
                 e = DeckEntry.from_dict(d)
                 self._side[e.name] = e
+            if "meta" in data:
+                self._meta = DeckMeta.from_dict(data["meta"])
             log.info("Loaded decklist: %d main, %d side.", len(self._main), len(self._side))
         except Exception as exc:
             log.warning("Could not load decklist: %s", exc)
@@ -94,6 +121,7 @@ class DecklistManager:
     def _save(self) -> None:
         try:
             data = {
+                "meta": self._meta.to_dict(),
                 "main": [e.to_dict() for e in self._main.values()],
                 "side": [e.to_dict() for e in self._side.values()],
             }
@@ -103,9 +131,15 @@ class DecklistManager:
         except Exception as exc:
             log.warning("Could not save decklist: %s", exc)
 
-    # ------------------------------------------------------------------
-    # Mutation
-    # ------------------------------------------------------------------
+    def get_meta(self) -> DeckMeta:
+        return self._meta
+
+    def set_meta(self, **kwargs) -> DeckMeta:
+        for k, v in kwargs.items():
+            if hasattr(self._meta, k):
+                setattr(self._meta, k, v)
+        self._save()
+        return self._meta
 
     def _zone(self, zone: Zone) -> OrderedDict[str, DeckEntry]:
         return self._main if zone == "main" else self._side
@@ -171,10 +205,6 @@ class DecklistManager:
             self._side.clear()
         self._save()
 
-    # ------------------------------------------------------------------
-    # Queries
-    # ------------------------------------------------------------------
-
     def get_entry(self, name: str, zone: Zone = "main") -> Optional[DeckEntry]:
         return self._zone(zone).get(name)
 
@@ -195,10 +225,6 @@ class DecklistManager:
             return sum(e.count for e in self._side.values())
         return sum(e.count for e in self._main.values()) + sum(e.count for e in self._side.values())
 
-    # ------------------------------------------------------------------
-    # Export
-    # ------------------------------------------------------------------
-
     def export(self, fmt: ExportFormat = "text") -> str:
         if fmt in ("text", "moxfield", "mtgo"):
             return self._export_plain(fmt)
@@ -206,20 +232,32 @@ class DecklistManager:
             return self._export_arena()
         raise ValueError(f"Unknown export format: {fmt!r}")
 
+    def _meta_comments(self) -> list[str]:
+        lines = []
+        if self._meta.name:
+            lines.append(f"// Name: {self._meta.name}")
+        if self._meta.format:
+            lines.append(f"// Format: {self._meta.format}")
+        if self._meta.commander and self._meta.is_commander_format:
+            lines.append(f"// Commander: {self._meta.commander}")
+        if self._meta.notes:
+            for note_line in self._meta.notes.splitlines():
+                lines.append(f"// {note_line}")
+        return lines
+
     def _export_plain(self, fmt: ExportFormat) -> str:
-        """
-        Universal plain-text format accepted by Moxfield, MTGO, Archidekt, etc.
+        lines: list[str] = self._meta_comments()
+        if lines:
+            lines.append("")
 
-        4 Lightning Bolt
-        2 Island
-        ...
-
-        Sideboard:
-        1 Tormod's Crypt
-        """
-        lines: list[str] = []
+        if self._meta.is_commander_format and self._meta.commander:
+            lines.append("Commander:")
+            lines.append(f"1 {self._meta.commander}")
+            lines.append("")
 
         for entry in self._main.values():
+            if self._meta.is_commander_format and entry.name == self._meta.commander:
+                continue
             lines.append(f"{entry.count} {entry.name}")
 
         if self._side:
@@ -231,38 +269,33 @@ class DecklistManager:
         return "\n".join(lines)
 
     def _export_arena(self) -> str:
-        """
-        MTGA / Arena format:
-
-        Deck
-        4 Lightning Bolt (M21) 152
-        2 Island (ANB) 114
-
-        Sideboard
-        1 Tormod's Crypt (M21) 269
-        """
-        lines: list[str] = ["Deck"]
-        for entry in self._main.values():
+        def card_line(entry: DeckEntry) -> str:
             if entry.set_code and entry.collector_number:
-                lines.append(
-                    f"{entry.count} {entry.name} ({entry.set_code.upper()}) {entry.collector_number}"
-                )
-            else:
-                lines.append(f"{entry.count} {entry.name}")
+                return f"{entry.count} {entry.name} ({entry.set_code.upper()}) {entry.collector_number}"
+            return f"{entry.count} {entry.name}"
+
+        lines: list[str] = self._meta_comments()
+        if lines:
+            lines.append("")
+
+        if self._meta.is_commander_format and self._meta.commander:
+            lines.append("Commander")
+            lines.append(f"1 {self._meta.commander}")
+            lines.append("")
+
+        lines.append("Deck")
+        for entry in self._main.values():
+            if self._meta.is_commander_format and entry.name == self._meta.commander:
+                continue
+            lines.append(card_line(entry))
 
         if self._side:
             lines.append("")
             lines.append("Sideboard")
             for entry in self._side.values():
-                if entry.set_code and entry.collector_number:
-                    lines.append(
-                        f"{entry.count} {entry.name} ({entry.set_code.upper()}) {entry.collector_number}"
-                    )
-                else:
-                    lines.append(f"{entry.count} {entry.name}")
+                lines.append(card_line(entry))
 
         return "\n".join(lines)
 
 
-# Module-level singleton
 decklist = DecklistManager()

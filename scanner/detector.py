@@ -1,37 +1,8 @@
-"""
-Card detection pipeline (v2 — Hough-line based).
-
-Detection steps, each with its own visual indicator:
-
-  [1] LINES    (grey, thin)   — every HoughLinesP segment in the frame
-  [2] QUAD     (orange)       — a perpendicular pair of line groups forms a
-                                card-shaped quadrilateral
-  [3] STRIP    (yellow box)   — the name-strip region back-projected onto the
-                                original frame (shows exactly what we OCR)
-  [4] NO_MATCH (red)          — OCR ran but fuzzy-match score too low
-  [5] MATCHED  (green)        — card name confirmed; label drawn above card
-
-MTG card anatomy (consistent across all frame variants):
-
-  ┌──────────────────────────────┐
-  │  Name (left)   Mana (right)  │  ← top ~17 % — we OCR left 72 % of this
-  ├──────────────────────────────┤
-  │            Art               │
-  ├──────────────────────────────┤
-  │  Type line                   │
-  ├──────────────────────────────┤
-  │  Text / rules / flavour      │
-  └─────────────────────── P/T ──┘
-
-"Showcase", borderless, retro and other alternate frames change the visual
-style but preserve this structural layout, so the name-strip approach works
-across virtually all printed Magic cards.
-"""
-
 from __future__ import annotations
 
 import logging
 import math
+import platform
 import queue
 import threading
 import time
@@ -58,31 +29,33 @@ from config import (
 log = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Camera enumeration
-# ---------------------------------------------------------------------------
+def _os_camera_names() -> list[str]:
+    # macOS: system_profiler enumerates cameras in the same order as OpenCV's
+    # AVFoundation backend, so indices match directly.
+    if platform.system() != "Darwin":
+        return []
+    try:
+        import json as _json
+        import subprocess as _sp
+        out = _sp.run(
+            ["system_profiler", "SPCameraDataType", "-json"],
+            capture_output=True, text=True, timeout=5,
+        )
+        data = _json.loads(out.stdout)
+        return [c.get("_name", "") for c in data.get("SPCameraDataType", [])]
+    except Exception:
+        return []
+
 
 def list_cameras(max_probe: int = 8) -> list[dict]:
-    """
-    Probe video-capture device indices 0 … max_probe and return those that
-    open and produce frames.
-
-    We use generic "Camera N" labels because the OS-level device order
-    (e.g. system_profiler on macOS) does not reliably match the indices that
-    OpenCV assigns, making native names misleading.  The native resolution is
-    included so users can distinguish devices (e.g. iPhone cameras typically
-    report different resolutions from built-in webcams).
-
-    Returns a list of dicts:
-        {"index": int, "name": str, "resolution": "WxH"}
-    """
+    os_names = _os_camera_names()
     cameras: list[dict] = []
 
     for idx in range(max_probe):
         cap = cv2.VideoCapture(idx)
         if not cap.isOpened():
             cap.release()
-            break          # assume no further indices exist after first gap
+            break
 
         ret, _ = cap.read()
         w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -90,17 +63,13 @@ def list_cameras(max_probe: int = 8) -> list[dict]:
         cap.release()
 
         if not ret:
-            continue       # index exists but delivers no frames — skip
+            continue
 
-        cameras.append({"index": idx, "name": f"Camera {idx}",
-                        "resolution": f"{w}×{h}"})
+        name = os_names[idx] if idx < len(os_names) and os_names[idx] else f"Camera {idx}"
+        cameras.append({"index": idx, "name": name, "resolution": f"{w}×{h}"})
 
     return cameras
 
-
-# ---------------------------------------------------------------------------
-# Lazy OCR reader
-# ---------------------------------------------------------------------------
 
 _ocr_reader = None
 _ocr_lock = threading.Lock()
@@ -118,39 +87,51 @@ def _get_ocr():
     return _ocr_reader
 
 
-# ---------------------------------------------------------------------------
-# Detection step enum and visual styles
-# ---------------------------------------------------------------------------
+def prewarm_ocr() -> None:
+    t = threading.Thread(target=_get_ocr, daemon=True, name="OCR-prewarm")
+    t.start()
+
+
+# Keyed by a coarse centroid+size fingerprint; re-uses the last OCR result while
+# a card stays in roughly the same position to avoid redundant inference.
+_quad_cache: dict[str, tuple[str, Optional[str], float, float]] = {}
+_QUAD_CACHE_TTL    = 3.0   # seconds
+_QUAD_CACHE_GRID   = 25    # px — centroid snap
+_QUAD_CACHE_WGRID  = 40    # px — size snap
+
+
+def _quad_key(quad: np.ndarray) -> str:
+    cx = round(float(quad[:, 0].mean()) / _QUAD_CACHE_GRID) * _QUAD_CACHE_GRID
+    cy = round(float(quad[:, 1].mean()) / _QUAD_CACHE_GRID) * _QUAD_CACHE_GRID
+    w  = round(float(quad[:, 0].max() - quad[:, 0].min()) / _QUAD_CACHE_WGRID) * _QUAD_CACHE_WGRID
+    h  = round(float(quad[:, 1].max() - quad[:, 1].min()) / _QUAD_CACHE_WGRID) * _QUAD_CACHE_WGRID
+    return f"{cx},{cy},{w},{h}"
+
 
 class DetectionStep(Enum):
-    LINES    = "lines"     # step 1 — raw Hough segments
-    QUAD     = "quad"      # step 2 — card-shaped quad found
-    STRIP    = "strip"     # step 3 — name strip isolated
-    NO_MATCH = "no_match"  # step 4 — OCR ran, score below threshold
-    MATCHED  = "matched"   # step 5 — fuzzy match confirmed
+    LINES    = "lines"
+    QUAD     = "quad"
+    STRIP    = "strip"
+    NO_MATCH = "no_match"
+    MATCHED  = "matched"
 
 
-# (BGR colour, line thickness)
 _STYLE: dict[DetectionStep, tuple[tuple[int, int, int], int]] = {
-    DetectionStep.LINES:    ((90,  90,  90),  1),   # dim grey
-    DetectionStep.QUAD:     ((0,  165, 255),  2),   # orange
-    DetectionStep.STRIP:    ((0,  255, 255),  2),   # yellow
-    DetectionStep.NO_MATCH: ((0,   60, 220),  2),   # red
-    DetectionStep.MATCHED:  ((0,  210,   0),  3),   # green
+    DetectionStep.LINES:    ((90,  90,  90),  1),
+    DetectionStep.QUAD:     ((0,  165, 255),  2),
+    DetectionStep.STRIP:    ((0,  255, 255),  2),
+    DetectionStep.NO_MATCH: ((0,   60, 220),  2),
+    DetectionStep.MATCHED:  ((0,  210,   0),  3),
 }
 
-
-# ---------------------------------------------------------------------------
-# Public data types (unchanged interface)
-# ---------------------------------------------------------------------------
 
 @dataclass
 class DetectedCard:
     raw_ocr_text: str
     matched_name: Optional[str]
     confidence: float
-    contour: np.ndarray    # shape (4, 2), int, frame coordinates
-    card_image: np.ndarray  # perspective-corrected card crop
+    contour: np.ndarray
+    card_image: np.ndarray
 
 
 @dataclass
@@ -160,20 +141,15 @@ class ScanFrame:
     timestamp: float = field(default_factory=time.monotonic)
 
 
-# ---------------------------------------------------------------------------
-# Geometry helpers
-# ---------------------------------------------------------------------------
-
 def _order_points(pts: np.ndarray) -> np.ndarray:
-    """Return (TL, TR, BR, BL) ordering for a 4-point array."""
     pts = pts.reshape(4, 2).astype("float32")
     rect = np.zeros((4, 2), dtype="float32")
     s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]    # TL: min(x+y)
-    rect[2] = pts[np.argmax(s)]    # BR: max(x+y)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
     diff = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(diff)] # TR: min(y−x)
-    rect[3] = pts[np.argmax(diff)] # BL: max(y−x)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
     return rect
 
 
@@ -195,10 +171,6 @@ def _four_point_transform(image: np.ndarray, pts: np.ndarray) -> np.ndarray:
 def _name_strip_frame_quad(
     quad: np.ndarray, card_h: int, card_w: int
 ) -> np.ndarray:
-    """
-    Back-project the name-strip bounding box from card-image space into
-    frame space.  Returns a (4, 2) float32 array for overlay drawing.
-    """
     rect = _order_points(quad.astype("float32"))
     dst = np.array(
         [[0, 0], [card_w - 1, 0], [card_w - 1, card_h - 1], [0, card_h - 1]],
@@ -219,12 +191,7 @@ def _name_strip_frame_quad(
     return frame_corners.reshape(4, 2)
 
 
-# ---------------------------------------------------------------------------
-# Hough-line based card detection
-# ---------------------------------------------------------------------------
-
 def _segment_angle(x1: float, y1: float, x2: float, y2: float) -> float:
-    """Line angle in [0, 180) degrees (direction-agnostic)."""
     return math.degrees(math.atan2(y2 - y1, x2 - x1)) % 180
 
 
@@ -232,16 +199,10 @@ def _cluster_by_angle(
     segments: list[tuple],
     tolerance: float = 15.0,
 ) -> list[list[tuple]]:
-    """
-    Group (x1, y1, x2, y2, angle) tuples by angle similarity.
-
-    Uses a running-average cluster centroid so later segments are compared
-    against the true mean of the cluster, not just its first member.
-    Greedy single-pass; fast for the typical <100-segment case after length
-    filtering.
-    """
+    # Running-average centroid so later segments are compared against the true
+    # cluster mean, not just its first member.
     clusters: list[list[tuple]] = []
-    centroids: list[float] = []          # running average angle per cluster
+    centroids: list[float] = []
 
     for seg in segments:
         angle = seg[4]
@@ -256,8 +217,6 @@ def _cluster_by_angle(
 
         if best_idx >= 0:
             clusters[best_idx].append(seg)
-            # Update running average (avoid 0/180 wrap-around issues by
-            # anchoring to the existing centroid direction)
             n = len(clusters[best_idx])
             centroids[best_idx] = (centroids[best_idx] * (n - 1) + angle) / n
         else:
@@ -267,26 +226,63 @@ def _cluster_by_angle(
     return clusters
 
 
-def _boundary_lines(cluster: list[tuple]) -> tuple[tuple, tuple]:
+def _split_into_line_groups(
+    cluster: list[tuple], frame_size: float
+) -> list[list[tuple]]:
     """
-    Return the two segments in a cluster that are furthest apart
-    (the two parallel edges of the card on that axis).
-    Measures separation by projecting midpoints onto the perpendicular direction.
+    Split an angle cluster into spatially coherent sub-groups.
+
+    Segments at the same angle but on opposite sides of the frame (e.g. a
+    shadow and a window ledge) belong to different physical lines.  This
+    function sub-clusters by perpendicular offset so each group contains only
+    segments that lie on the same line.  Groups with fewer than 2 segments are
+    discarded as single-segment noise.
     """
+    if not cluster:
+        return []
     avg_angle = sum(s[4] for s in cluster) / len(cluster)
     perp = math.radians(avg_angle + 90.0)
     px, py = math.cos(perp), math.sin(perp)
+    tol = frame_size * 0.05     # 5 % of frame — tight enough to separate lines
 
-    projections = [
-        (((s[0] + s[2]) / 2.0) * px + ((s[1] + s[3]) / 2.0) * py, s)
-        for s in cluster
-    ]
-    projections.sort(key=lambda x: x[0])
-    return projections[0][1], projections[-1][1]
+    groups:    list[list[tuple]] = []
+    centroids: list[float]      = []
+
+    for seg in cluster:
+        proj = ((seg[0] + seg[2]) / 2) * px + ((seg[1] + seg[3]) / 2) * py
+        best_idx, best_diff = -1, tol
+        for k, c in enumerate(centroids):
+            d = abs(proj - c)
+            if d < best_diff:
+                best_diff, best_idx = d, k
+        if best_idx >= 0:
+            groups[best_idx].append(seg)
+            n = len(groups[best_idx])
+            centroids[best_idx] = (centroids[best_idx] * (n - 1) + proj) / n
+        else:
+            groups.append([seg])
+            centroids.append(proj)
+
+    return [g for g in groups if len(g) >= 2]
+
+
+def _group_to_seg(group: list[tuple]) -> tuple:
+    """
+    Synthesise a representative segment for a line group.
+
+    Uses the average midpoint and average angle of all segments, then extends
+    ±200 px in the line direction.  This gives a cleaner line equation for
+    intersection than picking any single (potentially noisy) segment.
+    """
+    avg_angle = sum(s[4] for s in group) / len(group)
+    mid_x = sum((s[0] + s[2]) / 2 for s in group) / len(group)
+    mid_y = sum((s[1] + s[3]) / 2 for s in group) / len(group)
+    dx = math.cos(math.radians(avg_angle)) * 200
+    dy = math.sin(math.radians(avg_angle)) * 200
+    return (mid_x - dx, mid_y - dy, mid_x + dx, mid_y + dy, avg_angle)
 
 
 def _to_line_eq(seg: tuple) -> tuple[float, float, float]:
-    """Segment (x1,y1,x2,y2,...) → (a, b, c) where ax + by = c."""
     x1, y1, x2, y2 = seg[0], seg[1], seg[2], seg[3]
     a = float(y2 - y1)
     b = float(x1 - x2)
@@ -303,58 +299,41 @@ def _intersect(s1: tuple, s2: tuple) -> Optional[tuple[float, float]]:
     return (c1 * b2 - c2 * b1) / det, (a1 * c2 - a2 * c1) / det
 
 
+def _adaptive_canny(gray: np.ndarray) -> np.ndarray:
+    # Thresholds derived from the image's own median so they self-calibrate to
+    # the scene's dynamic range — handles low-contrast card borders (card on a
+    # similar-coloured surface) without blowing out bright scenes.
+    median = float(np.median(gray))
+    sigma  = 0.33
+    lo = max(10,      int((1.0 - sigma) * median))
+    hi = max(lo * 2,  int((1.0 + sigma) * median))
+    return cv2.Canny(gray, lo, hi)
+
+
 def _detect_lines_and_quads(
     frame: np.ndarray,
 ) -> tuple[list[tuple], list[np.ndarray]]:
-    """
-    Steps 1 & 2: detect Hough line segments, cluster by angle, find quads.
-
-    Why bilateral filter instead of Gaussian:
-      A card placed on a table has a strong, continuous edge at its border.
-      Inside the card there are many short parallel features: text rows, the
-      type-line separator, mana-cost symbols, art detail lines.  GaussianBlur
-      smooths everything equally, so all those interior features survive into
-      Canny and produce dozens of short line segments.  bilateralFilter
-      preserves strong edges (the card border) while blurring regions of
-      similar intensity (interior text areas), so far fewer interior lines
-      reach Canny.
-
-    Why no dilation:
-      Dilating the edge image widens every detected edge, which (a) makes
-      the card interior features even more prominent and (b) can merge
-      nearby unrelated edges into a single apparent long line.
-
-    Why longer minLineLength:
-      A standard card border at typical scanning distance produces edges
-      ~150–500 px long.  Text rows, separator lines, and art details produce
-      edges 10–80 px long.  Setting minLineLength to ~10 % of the frame's
-      shorter dimension (~72 px for 720 p) eliminates almost all card-interior
-      noise while keeping the four outer border segments.
-
-    Returns:
-      raw_lines — (x1, y1, x2, y2, angle) for every accepted long segment
-      quads     — (4, 2) float32 in TL/TR/BR/BL order, shape-validated
-    """
     h, w = frame.shape[:2]
 
-    gray  = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray   = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # Unsharp mask: boosts soft edges that appear when the camera hasn't yet
+    # refocused on the card, without amplifying broad background gradients.
+    _blur  = cv2.GaussianBlur(gray, (0, 0), 3)
+    gray   = cv2.addWeighted(gray, 1.5, _blur, -0.5, 0)
+    clahe  = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray   = clahe.apply(gray)
+    smooth = cv2.bilateralFilter(gray, d=7, sigmaColor=50, sigmaSpace=50)
+    edges  = _adaptive_canny(smooth)
 
-    # Bilateral filter: smooths flat-ish interior regions of the card while
-    # preserving the sharp luminance jump at the card's outer border.
-    smooth = cv2.bilateralFilter(gray, d=9, sigmaColor=75, sigmaSpace=75)
-    edges  = cv2.Canny(smooth, 50, 130)
-    # No dilation — see note above.
-
-    # Minimum line length: card borders span at least 10 % of the frame.
-    min_len = max(80, int(min(h, w) * 0.10))
+    min_len = max(60, int(min(h, w) * 0.08))
 
     raw = cv2.HoughLinesP(
         edges,
         rho=1,
         theta=np.pi / 180,
-        threshold=80,
+        threshold=65,
         minLineLength=min_len,
-        maxLineGap=25,
+        maxLineGap=40,
     )
     if raw is None:
         return [], []
@@ -370,17 +349,10 @@ def _detect_lines_and_quads(
     def _cluster_angle(segs: list[tuple]) -> float:
         return sum(s[4] for s in segs) / len(segs)
 
-    def _perp_sep(segs: list[tuple], ba: tuple, bb: tuple) -> float:
-        """Perpendicular separation between the two boundary line midpoints."""
-        pr = math.radians(_cluster_angle(segs) + 90.0)
-        ppx, ppy = math.cos(pr), math.sin(pr)
-        def proj(s: tuple) -> float:
-            return ((s[0]+s[2])/2)*ppx + ((s[1]+s[3])/2)*ppy
-        return abs(proj(ba) - proj(bb))
-
-    quads: list[np.ndarray] = []
-    checked: set[frozenset] = set()
+    quads:   list[np.ndarray]  = []
+    checked: set[frozenset]    = set()
     min_sep = max(80.0, math.sqrt(MIN_CARD_AREA) * 0.5)
+    margin  = min(w, h) * 0.12   # corners must be near the frame
 
     for i, ci in enumerate(clusters):
         for j, cj in enumerate(clusters):
@@ -391,21 +363,49 @@ def _detect_lines_and_quads(
                 continue
             checked.add(key)
 
-            # Require near-perpendicular groups (65°–115°)
             ai = _cluster_angle(ci)
             aj = _cluster_angle(cj)
             diff = min(abs(ai - aj) % 180, 180.0 - abs(ai - aj) % 180)
             if not (65.0 <= diff <= 115.0):
                 continue
 
-            li_a, li_b = _boundary_lines(ci)
-            lj_a, lj_b = _boundary_lines(cj)
-
-            # Both axes must span at least min_sep pixels
-            if _perp_sep(ci, li_a, li_b) < min_sep or _perp_sep(cj, lj_a, lj_b) < min_sep:
+            # Sub-cluster each direction by spatial position.  Each resulting
+            # group represents segments that lie on the same physical line.
+            # A valid card edge needs ≥2 segments — single-segment "lines" are
+            # almost always background noise.
+            gi = _split_into_line_groups(ci, max(w, h))
+            gj = _split_into_line_groups(cj, max(w, h))
+            if len(gi) < 2 or len(gj) < 2:
                 continue
 
-            # Compute 4 intersection corners
+            # Pick the two most-separated line groups in each direction and
+            # build representative segments from their averaged geometry.
+            # Using group averages rather than single extreme segments prevents
+            # one background line from hijacking a card-edge cluster.
+            def _boundary_groups(groups: list[list[tuple]], cluster_segs: list[tuple]):
+                avg_a = _cluster_angle(cluster_segs)
+                pr = math.radians(avg_a + 90.0)
+                ppx, ppy = math.cos(pr), math.sin(pr)
+                def gproj(g):
+                    return sum(((s[0]+s[2])/2)*ppx + ((s[1]+s[3])/2)*ppy
+                               for s in g) / len(g)
+                ordered = sorted(groups, key=gproj)
+                return _group_to_seg(ordered[0]), _group_to_seg(ordered[-1]), \
+                       abs(gproj(ordered[-1]) - gproj(ordered[0]))
+
+            li_a, li_b, sep_i = _boundary_groups(gi, ci)
+            lj_a, lj_b, sep_j = _boundary_groups(gj, cj)
+
+            if sep_i < min_sep or sep_j < min_sep:
+                continue
+
+            # Pre-check aspect ratio from the line separations before the
+            # more expensive corner-computation step.
+            if sep_i > 0 and sep_j > 0:
+                ar_pre = min(sep_i, sep_j) / max(sep_i, sep_j)
+                if not (CARD_ASPECT_MIN <= ar_pre <= CARD_ASPECT_MAX):
+                    continue
+
             corners: list[tuple[float, float]] = []
             ok = True
             for la in (li_a, li_b):
@@ -420,27 +420,39 @@ def _detect_lines_and_quads(
             if not ok or len(corners) != 4:
                 continue
 
-            # Corners must be within a generous frame margin
-            margin = max(w, h) * 0.3
             if any(
                 cx < -margin or cx > w + margin or cy < -margin or cy > h + margin
                 for cx, cy in corners
             ):
                 continue
 
-            pts = np.array(corners, dtype="float32")
+            pts     = np.array(corners, dtype="float32")
             ordered = _order_points(pts)
 
             if cv2.contourArea(ordered) < MIN_CARD_AREA:
                 continue
 
+            if not cv2.isContourConvex(ordered.reshape(-1, 1, 2).astype(int)):
+                continue
+
             tl, tr, br, bl = ordered
-            width_px  = max(np.linalg.norm(tr - tl), np.linalg.norm(br - bl))
-            height_px = max(np.linalg.norm(bl - tl), np.linalg.norm(br - tr))
+            top_w  = np.linalg.norm(tr - tl)
+            bot_w  = np.linalg.norm(br - bl)
+            left_h = np.linalg.norm(bl - tl)
+            rgt_h  = np.linalg.norm(br - tr)
+
+            # Opposite edges of a real card are equal length; large asymmetry
+            # means we intersected lines from two different objects.
+            if min(top_w, bot_w) > 0 and max(top_w, bot_w) / min(top_w, bot_w) > 1.4:
+                continue
+            if min(left_h, rgt_h) > 0 and max(left_h, rgt_h) / min(left_h, rgt_h) > 1.4:
+                continue
+
+            width_px  = max(top_w, bot_w)
+            height_px = max(left_h, rgt_h)
             if height_px < 1:
                 continue
-            aspect = width_px / height_px
-            if not (CARD_ASPECT_MIN <= aspect <= CARD_ASPECT_MAX):
+            if not (CARD_ASPECT_MIN <= width_px / height_px <= CARD_ASPECT_MAX):
                 continue
 
             quads.append(ordered)
@@ -472,29 +484,78 @@ def _deduplicate_quads(
     return kept
 
 
-# ---------------------------------------------------------------------------
-# OCR — improved name strip extraction
-# ---------------------------------------------------------------------------
+def _detect_quads_contour(frame: np.ndarray) -> list[np.ndarray]:
+    # Runs on both the normal image and its photometric inverse to catch
+    # white-border cards on dark backgrounds and dark-border cards on light ones.
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # Unsharp mask: same rationale as in _detect_lines_and_quads — compensates
+    # for soft-focus images so that card borders survive edge detection.
+    _blur = cv2.GaussianBlur(gray, (0, 0), 3)
+    gray  = cv2.addWeighted(gray, 1.5, _blur, -0.5, 0)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    gray  = clahe.apply(gray)
+
+    quads: list[np.ndarray] = []
+
+    for enhanced in (gray, cv2.bitwise_not(gray)):
+        # Adaptive Canny for normal contrast; fixed low thresholds as a second
+        # pass to catch soft borders that the median-derived thresholds miss.
+        edges = cv2.bitwise_or(
+            _adaptive_canny(enhanced),
+            cv2.Canny(enhanced, 15, 40),
+        )
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+        contours, _ = cv2.findContours(
+            closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        for cnt in sorted(contours, key=cv2.contourArea, reverse=True)[:20]:
+            area = cv2.contourArea(cnt)
+            if area < MIN_CARD_AREA:
+                break
+
+            peri   = cv2.arcLength(cnt, True)
+            # 0.04 (up from 0.03) tolerates slightly imperfect contours from
+            # soft-focus frames that approximate to more than 4 vertices.
+            approx = cv2.approxPolyDP(cnt, 0.04 * peri, True)
+            if len(approx) != 4:
+                continue
+
+            quad = _order_points(approx.reshape(4, 2).astype("float32"))
+
+            if not cv2.isContourConvex(quad.reshape(-1, 1, 2).astype(int)):
+                continue
+
+            tl, tr, br, bl = quad
+            cw = max(np.linalg.norm(tr - tl), np.linalg.norm(br - bl))
+            ch = max(np.linalg.norm(bl - tl), np.linalg.norm(br - tr))
+            if ch < 1:
+                continue
+            ar = cw / ch
+            if not (CARD_ASPECT_MIN <= ar <= CARD_ASPECT_MAX):
+                continue
+
+            quads.append(quad)
+
+    return _deduplicate_quads(quads)
+
+
+def _detect_card_candidates(
+    frame: np.ndarray,
+) -> tuple[list[tuple], list[np.ndarray]]:
+    raw_lines, hough_quads = _detect_lines_and_quads(frame)
+    contour_quads          = _detect_quads_contour(frame)
+    all_quads = _deduplicate_quads(hough_quads + contour_quads)
+    return raw_lines, all_quads
+
 
 def _ocr_card_name(
     card_img: np.ndarray,
     card_names_set: set[str],
     fuzzy_threshold: int,
 ) -> tuple[str, Optional[str], float, np.ndarray]:
-    """
-    Step 3 → 4/5: OCR the upper-left name strip of a corrected card image.
-
-    Strip geometry:
-      height = top NAME_ROW_FRACTION  of card  (catches full name bar)
-      width  = left NAME_COL_FRACTION of strip  (excludes mana-cost symbols)
-
-    Preprocessing:
-      - 3× upscale
-      - CLAHE contrast normalisation (handles gold / dark name bars)
-      - Adaptive Gaussian threshold (robust to colour variation)
-
-    Returns (raw_text, matched_name, confidence 0–1, processed strip image).
-    """
     from rapidfuzz import fuzz, process  # noqa: PLC0415
 
     ch, cw = card_img.shape[:2]
@@ -502,15 +563,10 @@ def _ocr_card_name(
     sw = max(1, int(cw * NAME_COL_FRACTION))
     strip = card_img[:sh, :sw]
 
-    # Upscale for glyph resolution
-    strip_up = cv2.resize(strip, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-
-    # CLAHE — normalises contrast on coloured name bars
+    strip_up = cv2.resize(strip, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(strip_up, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
     gray = clahe.apply(gray)
-
-    # Adaptive threshold — more robust than Otsu for varied backgrounds
     proc = cv2.adaptiveThreshold(
         gray, 255,
         cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
@@ -542,10 +598,6 @@ def _ocr_card_name(
     return raw_text, None, 0.0, proc
 
 
-# ---------------------------------------------------------------------------
-# Annotation — one visual layer per detection step
-# ---------------------------------------------------------------------------
-
 def _annotate(
     frame: np.ndarray,
     raw_lines: list[tuple],
@@ -555,13 +607,11 @@ def _annotate(
     out = frame.copy()
     fh, fw = out.shape[:2]
 
-    # ── Step 1: grey Hough lines ──────────────────────────────────────
     col_l, th_l = _STYLE[DetectionStep.LINES]
     for seg in raw_lines:
         cv2.line(out, (int(seg[0]), int(seg[1])), (int(seg[2]), int(seg[3])),
                  col_l, th_l)
 
-    # ── Step 2: orange card-shaped quads ─────────────────────────────
     col_q, th_q = _STYLE[DetectionStep.QUAD]
     for quad in quads:
         pts = quad.reshape(-1, 1, 2).astype(int)
@@ -569,20 +619,17 @@ def _annotate(
         for pt in quad.astype(int):
             cv2.circle(out, tuple(pt), 5, col_q, -1)
 
-    # ── Steps 3 / 4 / 5: detected cards ──────────────────────────────
     for card in detected:
-        cnt   = card.contour.reshape(-1, 1, 2).astype(int)
+        cnt    = card.contour.reshape(-1, 1, 2).astype(int)
         quad_f = card.contour.astype("float32")
         cimg_h, cimg_w = card.card_image.shape[:2]
 
-        # Always draw the name-strip overlay (step 3)
         col_s, _ = _STYLE[DetectionStep.STRIP]
         strip_poly = _name_strip_frame_quad(quad_f, cimg_h, cimg_w)
         sp = strip_poly.reshape(-1, 1, 2).astype(int)
         cv2.polylines(out, [sp], isClosed=True, color=col_s, thickness=2)
 
         if card.matched_name:
-            # Step 5 — green outline + name label
             col, thick = _STYLE[DetectionStep.MATCHED]
             cv2.polylines(out, [cnt], isClosed=True, color=col, thickness=thick)
             for pt in card.contour.astype(int):
@@ -600,7 +647,6 @@ def _annotate(
             cv2.putText(out, label, (x + pad, max(y - pad, th2 + pad)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, col, 2, cv2.LINE_AA)
         else:
-            # Step 4 — red outline + raw OCR snippet
             col, thick = _STYLE[DetectionStep.NO_MATCH]
             cv2.polylines(out, [cnt], isClosed=True, color=col, thickness=thick)
             if card.raw_ocr_text:
@@ -610,11 +656,10 @@ def _annotate(
                 cv2.putText(out, snippet, (x, max(y - 6, 14)),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.45, col, 1, cv2.LINE_AA)
 
-    # ── Status panel (bottom-left) ────────────────────────────────────
     matched_n = sum(1 for c in detected if c.matched_name)
     status = [
-        (col_l,                          f"Lines : {len(raw_lines)}"),
-        (col_q,                          f"Quads : {len(quads)}"),
+        (col_l,                            f"Lines : {len(raw_lines)}"),
+        (col_q,                            f"Quads : {len(quads)}"),
         (_STYLE[DetectionStep.MATCHED][0], f"Cards : {matched_n}"),
     ]
     for i, (color, text) in enumerate(status):
@@ -622,7 +667,30 @@ def _annotate(
         cv2.putText(out, text, (10, yp),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
-    # ── Legend (top-right) ────────────────────────────────────────────
+    if len(quads) == 0:
+        if len(raw_lines) == 0:
+            hint = "No edges found — try plain background / adjust lighting"
+            hint_col = (100, 100, 100)
+        else:
+            hint = "Edges found — try adjusting card angle or distance"
+            hint_col = (0, 165, 255)
+        (tw, th2), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        hx = (fw - tw) // 2
+        hy = fh - 10
+        cv2.rectangle(out, (hx - 6, hy - th2 - 4), (hx + tw + 6, hy + 4),
+                      (0, 0, 0), -1)
+        cv2.putText(out, hint, (hx, hy),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, hint_col, 1, cv2.LINE_AA)
+    elif matched_n == 0:
+        hint = "Shape found — reading card name…"
+        (tw, th2), _ = cv2.getTextSize(hint, cv2.FONT_HERSHEY_SIMPLEX, 0.45, 1)
+        hx = (fw - tw) // 2
+        hy = fh - 10
+        cv2.rectangle(out, (hx - 6, hy - th2 - 4), (hx + tw + 6, hy + 4),
+                      (0, 0, 0), -1)
+        cv2.putText(out, hint, (hx, hy),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.45, col_q, 1, cv2.LINE_AA)
+
     legend = [
         (DetectionStep.LINES,    "Lines detected"),
         (DetectionStep.QUAD,     "Card quad"),
@@ -640,17 +708,8 @@ def _annotate(
     return out
 
 
-# ---------------------------------------------------------------------------
-# Scanner thread
-# ---------------------------------------------------------------------------
-
 class CardScanner:
-    """
-    Runs video capture and card detection in a background daemon thread.
-
-    frame_queue      — annotated JPEG bytes for the MJPEG stream
-    card_event_queue — lists of DetectedCard pushed when new cards are found
-    """
+    """Background thread for video capture and card detection."""
 
     def __init__(self, card_names: list[str]) -> None:
         self.card_names_set: set[str]    = set(card_names)
@@ -665,11 +724,7 @@ class CardScanner:
         self._recent_ttl = 4.0
 
         self._video_source: int | str = VIDEO_SOURCE
-        self._pending_source: int | str | None = None  # set by switch_source()
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
+        self._pending_source: int | str | None = None
 
     def start(self) -> None:
         if self._running:
@@ -691,17 +746,12 @@ class CardScanner:
         self.card_names_set = set(names)
 
     def switch_source(self, source: int | str) -> None:
-        """Request a camera switch. Takes effect at the next frame boundary."""
         self._pending_source = source
         log.info("Camera switch requested → %s", source)
 
     @property
     def current_source(self) -> int | str:
         return self._video_source
-
-    # ------------------------------------------------------------------
-    # Main loop
-    # ------------------------------------------------------------------
 
     def _run(self) -> None:
         def _open(source: int | str) -> cv2.VideoCapture:
@@ -718,12 +768,11 @@ class CardScanner:
             return
 
         frame_count    = 0
-        last_lines:    list[tuple]         = []
-        last_quads:    list[np.ndarray]    = []
-        last_detected: list[DetectedCard]  = []
+        last_lines:    list[tuple]        = []
+        last_quads:    list[np.ndarray]   = []
+        last_detected: list[DetectedCard] = []
 
         while self._running:
-            # ── Handle pending camera switch ──────────────────────────
             if self._pending_source is not None:
                 new_src = self._pending_source
                 self._pending_source = None
@@ -749,11 +798,9 @@ class CardScanner:
             frame_count += 1
 
             if frame_count % FRAME_SKIP == 0:
-                # Full detection: lines → quads → OCR
-                raw_lines, quads = _detect_lines_and_quads(frame)
+                raw_lines, quads = _detect_card_candidates(frame)
                 last_lines    = raw_lines
                 last_quads    = quads
-
                 detected      = self._process_quads(frame, quads)
                 last_detected = detected
 
@@ -764,7 +811,6 @@ class CardScanner:
                     except queue.Full:
                         pass
 
-            # Annotate every frame with the latest detection state
             annotated = _annotate(frame, last_lines, last_quads, last_detected)
             jpeg = self._encode_jpeg(annotated)
 
@@ -775,27 +821,36 @@ class CardScanner:
 
         cap.release()
 
-    # ------------------------------------------------------------------
-    # Processing helpers
-    # ------------------------------------------------------------------
-
     def _process_quads(
         self, frame: np.ndarray, quads: list[np.ndarray]
     ) -> list[DetectedCard]:
+        now = time.monotonic()
         detected: list[DetectedCard] = []
+
         for quad in quads:
+            key = _quad_key(quad)
+            cached = _quad_cache.get(key)
+            if cached and cached[3] > now:
+                raw, matched, score, _ = cached
+                detected.append(DetectedCard(
+                    raw_ocr_text=raw,
+                    matched_name=matched,
+                    confidence=score,
+                    contour=quad.astype(int),
+                    card_image=np.zeros((1, 1, 3), dtype=np.uint8),
+                ))
+                continue
+
             try:
                 card_img = _four_point_transform(frame, quad)
             except cv2.error:
                 continue
 
-            ch, cw = card_img.shape[:2]
-            if cw > ch:                         # ensure portrait orientation
-                card_img = cv2.rotate(card_img, cv2.ROTATE_90_CLOCKWISE)
-
             raw, matched, score, _ = _ocr_card_name(
                 card_img, self.card_names_set, self.fuzzy_threshold
             )
+            _quad_cache[key] = (raw, matched, score, now + _QUAD_CACHE_TTL)
+
             detected.append(DetectedCard(
                 raw_ocr_text=raw,
                 matched_name=matched,
@@ -826,10 +881,6 @@ class CardScanner:
             ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY]
         )
         return bytes(buf) if ok else b""
-
-    # ------------------------------------------------------------------
-    # MJPEG stream
-    # ------------------------------------------------------------------
 
     def latest_jpeg(self) -> Generator[bytes, None, None]:
         boundary = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"

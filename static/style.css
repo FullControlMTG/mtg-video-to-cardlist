@@ -280,7 +280,19 @@ body {
   padding: 10px 16px 0;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
 }
+.deck-header .section-title { flex: 1; min-width: 0; }
+.btn-icon {
+  padding: 2px 6px;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.6;
+}
+.btn-icon:hover { opacity: 1; }
 .deck-counts {
   font-size: 0.78rem;
   color: var(--text-muted);
@@ -550,6 +562,38 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* ── Deck settings modal ─────────────────────────────────────────── */
+.modal-settings { max-width: 420px; width: 100%; }
+.settings-title {
+  font-size: 1rem;
+  font-weight: 700;
+  margin: 0 0 16px;
+}
+.settings-body { display: flex; flex-direction: column; gap: 12px; }
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+}
+.settings-field input,
+.settings-field select,
+.settings-field textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.88rem;
+  padding: 6px 10px;
+  outline: none;
+  font-family: inherit;
+  resize: vertical;
+}
+.settings-field input:focus,
+.settings-field select:focus,
+.settings-field textarea:focus { border-color: var(--accent); }
 
 /* ── Responsive ──────────────────────────────────────────────────── */
 @media (max-width: 768px) {

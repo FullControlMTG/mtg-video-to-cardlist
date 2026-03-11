@@ -10,7 +10,6 @@
 
 <div id="app">
 
-  <!-- ── Header ─────────────────────────────────────────────────── -->
   <header class="header">
     <div class="header-left">
       <span class="logo">&#9830; MTG Card Scanner</span>
@@ -34,10 +33,9 @@
     </div>
   </header>
 
-  <!-- ── Main layout ────────────────────────────────────────────── -->
-  <div class="layout">
+  <div class="layout" id="layout">
 
-    <!-- Left: Video + Detected cards -->
+    <!-- Left pane: video feed + detected cards -->
     <div class="pane pane-left">
       <section class="video-section">
         <div class="section-title">
@@ -52,7 +50,7 @@
       <section class="detected-section">
         <div class="section-title">
           Detected This Session
-          <button class="btn-ghost" id="clear-detected-btn" title="Clear detected list">Clear</button>
+          <button class="btn-ghost" id="clear-detected-btn">Clear All</button>
         </div>
         <div class="detected-grid" id="detected-grid">
           <p class="empty-hint">Cards recognised by the camera will appear here.</p>
@@ -60,41 +58,55 @@
       </section>
     </div>
 
-    <!-- Right: Decklist -->
-    <div class="pane pane-right">
+    <!-- Right pane: decklist -->
+    <div class="pane pane-right" id="pane-right">
+
       <div class="deck-header">
-        <span class="section-title">Decklist</span>
-        <div class="deck-counts">
-          <span id="main-count">0</span> main &nbsp;/&nbsp;
-          <span id="side-count">0</span> side
+        <div class="deck-header-row deck-header-top">
+          <span class="deck-name" id="deck-name-display">Decklist</span>
+          <div class="deck-header-actions">
+            <button class="btn-icon" id="settings-btn" title="Deck settings">&#9881;</button>
+            <button class="btn-icon" id="toggle-deck-btn" title="Hide decklist">&#9654;</button>
+          </div>
         </div>
-        <div class="zone-tabs">
+        <div class="deck-header-row">
+          <span class="deck-counts">
+            <span id="main-count">0</span> main &nbsp;/&nbsp; <span id="side-count">0</span> side
+          </span>
+        </div>
+        <div class="deck-header-row deck-tabs-row">
           <button class="zone-tab active" data-zone="main">Main</button>
           <button class="zone-tab" data-zone="side">Sideboard</button>
         </div>
       </div>
 
       <div class="decklist-scroll" id="decklist-scroll">
-        <div id="decklist-main" class="decklist-zone active-zone"></div>
+        <div id="decklist-main" class="decklist-zone"></div>
         <div id="decklist-side" class="decklist-zone" style="display:none"></div>
       </div>
 
-      <!-- Export -->
       <div class="export-bar">
-        <span class="export-label">Export:</span>
-        <button class="btn-export" data-fmt="moxfield">Moxfield</button>
-        <button class="btn-export" data-fmt="mtga">MTGA</button>
-        <button class="btn-export" data-fmt="mtgo">MTGO</button>
-        <button class="btn-export" data-fmt="text">Plain Text</button>
+        <span class="export-label">Export</span>
+        <div class="export-buttons">
+          <button class="btn-export" data-fmt="moxfield">Moxfield</button>
+          <button class="btn-export" data-fmt="mtga">MTGA</button>
+          <button class="btn-export" data-fmt="mtgo">MTGO</button>
+          <button class="btn-export" data-fmt="text">Plain Text</button>
+        </div>
         <button class="btn-danger" id="clear-deck-btn">Clear Deck</button>
       </div>
     </div>
 
-  </div><!-- /.layout -->
+    <!-- Collapsed deck tab (visible when deck is hidden) -->
+    <div class="deck-collapsed" id="deck-collapsed" style="display:none">
+      <button id="show-deck-btn" title="Show decklist">&#9664; Decklist</button>
+    </div>
 
-</div><!-- /#app -->
+  </div>
 
-<!-- ── Card detail modal ──────────────────────────────────────── -->
+</div>
+
+<!-- Card detail modal -->
 <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-label="Card detail">
   <div class="modal">
     <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
@@ -102,7 +114,7 @@
   </div>
 </div>
 
-<!-- ── Export modal ───────────────────────────────────────────── -->
+<!-- Export modal -->
 <div class="modal-overlay" id="export-overlay" role="dialog" aria-modal="true" aria-label="Export">
   <div class="modal modal-export">
     <div class="modal-export-header">
@@ -113,6 +125,35 @@
     <div class="export-actions">
       <button class="btn-primary" id="copy-btn">Copy to Clipboard</button>
       <button class="btn-ghost" id="download-btn">Download .txt</button>
+    </div>
+  </div>
+</div>
+
+<!-- Deck settings modal -->
+<div class="modal-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-label="Deck Settings">
+  <div class="modal modal-settings">
+    <button class="modal-close" id="settings-close" aria-label="Close">&times;</button>
+    <h2 class="settings-title">Deck Settings</h2>
+    <div class="settings-body">
+      <label class="settings-field">
+        <span>Deck Name</span>
+        <input id="settings-name" type="text" placeholder="My Deck" autocomplete="off" />
+      </label>
+      <label class="settings-field">
+        <span>Format</span>
+        <select id="settings-format">
+          <option value="">— Select format —</option>
+        </select>
+      </label>
+      <label class="settings-field" id="settings-commander-row">
+        <span>Commander</span>
+        <input id="settings-commander" type="text" placeholder="Card name…" autocomplete="off" />
+      </label>
+      <label class="settings-field">
+        <span>Notes</span>
+        <textarea id="settings-notes" rows="3" placeholder="Optional description…"></textarea>
+      </label>
+      <button class="btn-primary" id="settings-save">Save</button>
     </div>
   </div>
 </div>

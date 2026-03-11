@@ -1,20 +1,3 @@
-"""
-FastAPI application.
-
-Routes:
-  GET  /                          → main UI (index.html)
-  GET  /video                     → MJPEG video stream
-  GET  /api/cards                 → full decklist JSON
-  POST /api/cards                 → add card to deck
-  PATCH /api/cards/{name}         → set count / move zone
-  DELETE /api/cards/{name}        → remove card (or decrement)
-  GET  /api/search?q=…            → search Scryfall local index
-  GET  /api/card/{name}           → fetch single card data
-  POST /api/deck/clear            → wipe deck (main/side/both)
-  GET  /api/export/{fmt}          → export decklist text
-  WS   /ws                        → real-time card-detection events
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -30,16 +13,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from decklist.manager import Zone, decklist
-from scanner.detector import CardScanner, list_cameras
+from scanner.detector import CardScanner, list_cameras, prewarm_ocr
 from scryfall.client import scryfall
 
 log = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).parent.parent / "static"
 
-# ---------------------------------------------------------------------------
-# Globals initialised on startup
-# ---------------------------------------------------------------------------
 scanner: Optional[CardScanner] = None
 _ws_clients: list[WebSocket] = []
 
@@ -48,14 +28,12 @@ _ws_clients: list[WebSocket] = []
 async def lifespan(app: FastAPI):
     global scanner
 
-    # Load Scryfall data in background so the UI is immediately available
     asyncio.create_task(_load_scryfall())
+    prewarm_ocr()
 
-    # Start the video scanner thread
     scanner = CardScanner(card_names=[])
     scanner.start()
 
-    # Background task: relay card detection events to WebSocket clients
     asyncio.create_task(_relay_card_events())
 
     yield
@@ -79,14 +57,13 @@ async def _load_scryfall() -> None:
 
 
 async def _relay_card_events() -> None:
-    """Forward card-detection events from the scanner queue to all WS clients."""
     loop = asyncio.get_event_loop()
     while True:
         if not scanner:
             await asyncio.sleep(0.5)
             continue
         try:
-            # Poll the queue without blocking the event loop
+            # run_in_executor keeps the blocking queue.get off the event loop
             cards = await loop.run_in_executor(
                 None, lambda: scanner.card_event_queue.get(timeout=0.3)
             )
@@ -120,19 +97,11 @@ async def _relay_card_events() -> None:
             _ws_clients.remove(ws)
 
 
-# ---------------------------------------------------------------------------
-# HTML entry-point
-# ---------------------------------------------------------------------------
-
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(content=html)
 
-
-# ---------------------------------------------------------------------------
-# MJPEG video stream
-# ---------------------------------------------------------------------------
 
 @app.get("/video")
 async def video_feed() -> StreamingResponse:
@@ -148,9 +117,25 @@ async def video_feed() -> StreamingResponse:
     )
 
 
-# ---------------------------------------------------------------------------
-# Decklist API
-# ---------------------------------------------------------------------------
+class DeckMetaRequest(BaseModel):
+    name:      Optional[str] = None
+    format:    Optional[str] = None
+    commander: Optional[str] = None
+    notes:     Optional[str] = None
+
+
+@app.get("/api/deck")
+async def get_deck_meta():
+    from decklist.manager import FORMATS
+    return {**decklist.get_meta().to_dict(), "formats": FORMATS}
+
+
+@app.patch("/api/deck")
+async def patch_deck_meta(req: DeckMetaRequest):
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    meta = decklist.set_meta(**updates)
+    return meta.to_dict()
+
 
 class AddCardRequest(BaseModel):
     name: str
@@ -175,14 +160,11 @@ async def get_cards():
 
 @app.post("/api/cards")
 async def add_card(req: AddCardRequest):
-    # Fetch card data from local index
     card_data = scryfall.get_card(req.name)
     if not card_data:
-        # Try a live lookup for very new cards
         card_data = await scryfall.fetch_card_live(req.name)
 
     if not card_data:
-        # Allow adding even if not in Scryfall (user might know the name)
         entry = decklist.add(req.name, req.count, req.zone)
     else:
         entry = decklist.add(
@@ -202,7 +184,6 @@ async def add_card(req: AddCardRequest):
 
 @app.patch("/api/cards/{name}")
 async def patch_card(name: str, req: PatchCardRequest):
-    # Auto-detect zone when caller didn't specify
     if req.zone is not None:
         zone: Zone = req.zone
     elif decklist.get_entry(name, "side") and not decklist.get_entry(name, "main"):
@@ -237,10 +218,6 @@ async def clear_deck(zone: Optional[Zone] = Query(default=None)):
     return {"ok": True}
 
 
-# ---------------------------------------------------------------------------
-# Export
-# ---------------------------------------------------------------------------
-
 @app.get("/api/export/{fmt}")
 async def export_deck(fmt: str):
     valid = ("text", "moxfield", "mtga", "mtgo", "arena")
@@ -250,17 +227,12 @@ async def export_deck(fmt: str):
     return Response(content=text, media_type="text/plain; charset=utf-8")
 
 
-# ---------------------------------------------------------------------------
-# Camera management
-# ---------------------------------------------------------------------------
-
 class SelectCameraRequest(BaseModel):
     source: int
 
 
 @app.get("/api/cameras")
 async def get_cameras():
-    """List all available capture devices with human-readable names."""
     cameras = list_cameras()
     current = scanner.current_source if scanner else 0
     return {"cameras": cameras, "current": current}
@@ -273,10 +245,6 @@ async def select_camera(req: SelectCameraRequest):
     scanner.switch_source(req.source)
     return {"ok": True, "source": req.source}
 
-
-# ---------------------------------------------------------------------------
-# Scryfall search
-# ---------------------------------------------------------------------------
 
 @app.get("/api/search")
 async def search_cards(q: str = Query(default="", min_length=1)):
@@ -294,10 +262,6 @@ async def get_card(name: str):
     return card.to_dict()
 
 
-# ---------------------------------------------------------------------------
-# WebSocket
-# ---------------------------------------------------------------------------
-
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket) -> None:
     await ws.accept()
@@ -305,11 +269,9 @@ async def websocket_endpoint(ws: WebSocket) -> None:
     log.info("WS client connected (%d total)", len(_ws_clients))
     try:
         while True:
-            # Keep the connection alive; client can also send messages
             data = await ws.receive_text()
             msg = json.loads(data)
 
-            # Client can request adding a card via WS too
             if msg.get("action") == "add_card":
                 name = msg.get("name", "")
                 count = int(msg.get("count", 1))
@@ -336,10 +298,6 @@ async def websocket_endpoint(ws: WebSocket) -> None:
             _ws_clients.remove(ws)
         log.info("WS client disconnected (%d remaining)", len(_ws_clients))
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 async def _broadcast_deck_update() -> None:
     if not _ws_clients:
