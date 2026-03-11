@@ -734,7 +734,7 @@ class CardScanner:
             target=self._run, daemon=True, name="CardScanner"
         )
         self._thread.start()
-        log.info("CardScanner started (source=%s)", VIDEO_SOURCE)
+        log.info("CardScanner started (source=%s)", self._video_source)
 
     def stop(self) -> None:
         self._running = False
@@ -759,13 +759,33 @@ class CardScanner:
             if cap.isOpened():
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+                ret, _ = cap.read()
+                if not ret:
+                    cap.release()
+                    return cv2.VideoCapture()  # return closed cap
             return cap
 
-        cap = _open(self._video_source)
+        def _open_any() -> tuple[cv2.VideoCapture, int | str]:
+            """Try the configured source first, then probe 0–7 for any working camera."""
+            cap = _open(self._video_source)
+            if cap.isOpened():
+                return cap, self._video_source
+            log.warning("Source %s unavailable; probing for any camera…", self._video_source)
+            for idx in range(8):
+                if idx == self._video_source:
+                    continue
+                cap = _open(idx)
+                if cap.isOpened():
+                    log.info("Falling back to camera %d", idx)
+                    return cap, idx
+            return cv2.VideoCapture(), self._video_source
+
+        cap, active_source = _open_any()
         if not cap.isOpened():
-            log.error("Cannot open video source: %s", self._video_source)
+            log.error("No working camera found.")
             self._running = False
             return
+        self._video_source = active_source
 
         frame_count    = 0
         last_lines:    list[tuple]        = []

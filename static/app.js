@@ -28,6 +28,17 @@ const paneRight     = $('pane-right');
 const deckCollapsed = $('deck-collapsed');
 const helpOverlay   = $('help-overlay');
 
+const videoFeed = $('video-feed');
+
+function reloadVideoFeed() {
+  videoFeed.src = '';
+  setTimeout(() => { videoFeed.src = '/video'; }, 400);
+}
+
+videoFeed.addEventListener('error', () => {
+  setTimeout(reloadVideoFeed, 2000);
+});
+
 function debounce(fn, ms) {
   let t;
   return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
@@ -420,6 +431,7 @@ cameraSelect.addEventListener('change', async () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source }),
     });
+    reloadVideoFeed();
   } catch { /* ignore */ }
 });
 
