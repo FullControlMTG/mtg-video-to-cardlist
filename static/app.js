@@ -529,11 +529,27 @@ document.addEventListener('keydown', e => {
 connectWS();
 loadDeck();
 
+const rotateBtn = $('rotate-btn');
+let _cameraRotation = 0;
+
+rotateBtn.addEventListener('click', async () => {
+  _cameraRotation = (_cameraRotation + 90) % 360;
+  try {
+    await fetch('/api/camera/rotate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rotation: _cameraRotation }),
+    });
+    // No reloadVideoFeed() — the MJPEG stream is continuous; the server starts
+    // emitting rotated frames immediately, so the existing stream just updates.
+  } catch { /* ignore */ }
+});
+
 async function loadCameras() {
   try {
     const resp = await fetch('/api/cameras');
     if (!resp.ok) return;
-    const { cameras, current } = await resp.json();
+    const { cameras, current, rotation } = await resp.json();
 
     cameraSelect.innerHTML = cameras.length
       ? cameras.map(c =>
@@ -542,6 +558,7 @@ async function loadCameras() {
       : '<option value="">No cameras found</option>';
 
     cameraSelect.value = String(current);
+    if (rotation !== undefined) _cameraRotation = rotation;
   } catch { /* ignore */ }
 }
 

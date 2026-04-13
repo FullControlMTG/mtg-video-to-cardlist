@@ -235,7 +235,8 @@ class SelectCameraRequest(BaseModel):
 async def get_cameras():
     cameras = list_cameras()
     current = scanner.current_source if scanner else 0
-    return {"cameras": cameras, "current": current}
+    rotation = scanner.rotation if scanner else 0
+    return {"cameras": cameras, "current": current, "rotation": rotation}
 
 
 @app.post("/api/cameras/select")
@@ -244,6 +245,20 @@ async def select_camera(req: SelectCameraRequest):
         raise HTTPException(503, "Scanner not initialised")
     scanner.switch_source(req.source)
     return {"ok": True, "source": req.source}
+
+
+class RotateCameraRequest(BaseModel):
+    rotation: int  # 0, 90, 180, or 270
+
+
+@app.post("/api/camera/rotate")
+async def rotate_camera(req: RotateCameraRequest):
+    if not scanner:
+        raise HTTPException(503, "Scanner not initialised")
+    if req.rotation not in (0, 90, 180, 270):
+        raise HTTPException(400, "rotation must be 0, 90, 180, or 270")
+    scanner.set_rotation(req.rotation)
+    return {"ok": True, "rotation": req.rotation}
 
 
 @app.get("/api/search")

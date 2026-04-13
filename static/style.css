@@ -183,6 +183,7 @@ body {
   justify-content: center;
   align-items: center;
   overflow: hidden;
+  min-height: 200px;
   max-height: 340px;
 }
 #video-feed {
@@ -499,6 +500,7 @@ body {
   margin-left: auto;
 }
 .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+.btn-rotate { font-size: 1rem; padding: 2px 7px; margin-left: 6px; }
 
 .btn-primary {
   padding: 8px 20px;

@@ -725,6 +725,7 @@ class CardScanner:
 
         self._video_source: int | str = VIDEO_SOURCE
         self._pending_source: int | str | None = None
+        self._rotation: int = 0  # degrees: 0, 90, 180, or 270
 
     def start(self) -> None:
         if self._running:
@@ -749,9 +750,18 @@ class CardScanner:
         self._pending_source = source
         log.info("Camera switch requested → %s", source)
 
+    def set_rotation(self, degrees: int) -> None:
+        """Set feed rotation. degrees must be 0, 90, 180, or 270."""
+        self._rotation = degrees % 360
+        log.info("Camera rotation set to %d°", self._rotation)
+
     @property
     def current_source(self) -> int | str:
         return self._video_source
+
+    @property
+    def rotation(self) -> int:
+        return self._rotation
 
     def _run(self) -> None:
         def _open(source: int | str) -> cv2.VideoCapture:
@@ -815,6 +825,7 @@ class CardScanner:
                 time.sleep(0.1)
                 continue
 
+            frame = self._rotate_frame(frame)
             frame_count += 1
 
             if frame_count % FRAME_SKIP == 0:
@@ -840,6 +851,15 @@ class CardScanner:
                 pass
 
         cap.release()
+
+    def _rotate_frame(self, frame: np.ndarray) -> np.ndarray:
+        if self._rotation == 90:
+            return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        if self._rotation == 180:
+            return cv2.rotate(frame, cv2.ROTATE_180)
+        if self._rotation == 270:
+            return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return frame
 
     def _process_quads(
         self, frame: np.ndarray, quads: list[np.ndarray]
