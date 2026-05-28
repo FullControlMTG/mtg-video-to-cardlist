@@ -562,4 +562,22 @@ async function loadCameras() {
   } catch { /* ignore */ }
 }
 
+// Poll the camera lifecycle state so the user can see whether we're actually
+// receiving frames (the app is useless if we can't), without re-enumerating
+// devices each time.
+const camStatus = $('cam-status');
+async function pollCameraStatus() {
+  try {
+    const resp = await fetch('/api/camera/status');
+    if (!resp.ok) return;
+    const s = await resp.json();
+    camStatus.textContent = `camera: ${s.state}`;
+    camStatus.classList.toggle('badge-ok',   s.state === 'streaming');
+    camStatus.classList.toggle('badge-warn', s.state === 'connecting' || s.state === 'warming_up' || s.state === 'reconnecting');
+    camStatus.classList.toggle('badge-err',  s.state === 'failed');
+  } catch { /* ignore */ }
+}
+
 loadCameras();
+pollCameraStatus();
+setInterval(pollCameraStatus, 2000);

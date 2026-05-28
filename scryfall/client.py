@@ -12,6 +12,7 @@ import httpx
 
 from config import (
     CARD_NAMES_FILE,
+    FUZZY_MATCH_THRESHOLD,
     SCRYFALL_BULK_DATA_URL,
     SCRYFALL_SEARCH_URL,
 )
@@ -78,6 +79,7 @@ def _parse_card(raw: dict) -> Optional[CardData]:
 class ScryfallClient:
     def __init__(self) -> None:
         self._index: dict[str, CardData] = {}
+        self._match_keys: list[str] = []   # lowercase names, cached for fuzzy matching
         self._loaded = False
         self._load_lock = asyncio.Lock()
 
@@ -91,6 +93,7 @@ class ScryfallClient:
             else:
                 log.info("Downloading Scryfall bulk data (this is a one-time ~30 MB download)…")
                 await self._download_and_cache()
+            self._match_keys = list(self._index.keys())
             self._loaded = True
             log.info("Scryfall index ready: %d cards.", len(self._index))
 
@@ -154,6 +157,56 @@ class ScryfallClient:
 
     def all_names(self) -> list[str]:
         return [c.name for c in self._index.values()]
+
+    def match_ocr_name(
+        self, raw_text: str, threshold: Optional[int] = None
+    ) -> tuple[Optional[str], float]:
+        """Fuzzy-match raw OCR text to a card and return (canonical_name, score).
+
+        This is the per-read matcher the scanner votes on: each noisy OCR read is
+        resolved to a real card name here (correcting mis-OCR), and the detector
+        confirms once the same name wins enough reads. Score is 0-1. Returns
+        (None, 0.0) below the threshold or before the index is loaded.
+        Cheap + local (RapidFuzz over the cached name list); no network.
+        """
+        from rapidfuzz import fuzz, process  # noqa: PLC0415
+
+        if not raw_text or not raw_text.strip():
+            return None, 0.0
+        keys = self._match_keys or list(self._index.keys())
+        if not keys:
+            return None, 0.0
+        th = FUZZY_MATCH_THRESHOLD if threshold is None else threshold
+        match = process.extractOne(
+            raw_text.lower(), keys, scorer=fuzz.WRatio, score_cutoff=th,
+        )
+        if not match:
+            return None, 0.0
+        card = self._index.get(match[0])
+        return (card.name if card else None), match[1] / 100.0
+
+    def match_ocr(self, raw_text: str, threshold: Optional[int] = None) -> Optional[CardData]:
+        """Fuzzy-match raw OCR text to a real card and return its data.
+
+        This is the deferred lookup the detection pipeline hands off to: the
+        scanner only confirms a steady OCR *string*; resolving it to an actual
+        card (the ~7-24 ms fuzzy search over ~34k names) happens here, off the
+        detection thread. Call it from a thread/executor — it is CPU-bound.
+        """
+        from rapidfuzz import fuzz, process  # noqa: PLC0415
+
+        if not raw_text or not raw_text.strip():
+            return None
+        keys = self._match_keys or list(self._index.keys())
+        if not keys:
+            return None
+        th = FUZZY_MATCH_THRESHOLD if threshold is None else threshold
+        match = process.extractOne(
+            raw_text.lower(), keys, scorer=fuzz.WRatio, score_cutoff=th,
+        )
+        if not match:
+            return None
+        return self._index.get(match[0])
 
     async def fetch_card_live(self, name: str) -> Optional[CardData]:
         """Live Scryfall lookup for cards not yet in the local cache."""

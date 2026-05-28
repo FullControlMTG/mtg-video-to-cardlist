@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import queue
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
@@ -31,7 +32,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_load_scryfall())
     prewarm_ocr()
 
-    scanner = CardScanner(card_names=[])
+    # Inject the per-read fuzzy matcher so the detector can vote on resolved card
+    # names (correcting OCR noise) rather than on raw OCR text. It returns
+    # (None, 0.0) until the Scryfall index has finished loading.
+    scanner = CardScanner(matcher=scryfall.match_ocr_name)
     scanner.start()
 
     asyncio.create_task(_relay_card_events())
@@ -49,25 +53,31 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 async def _load_scryfall() -> None:
     try:
         await scryfall.ensure_bulk_loaded()
-        if scanner:
-            scanner.update_card_names(scryfall.all_names())
-        log.info("Scryfall data loaded and scanner updated.")
+        log.info("Scryfall data loaded (%d cards).", len(scryfall.all_names()))
     except Exception as exc:
         log.error("Failed to load Scryfall data: %s", exc)
 
 
 async def _relay_card_events() -> None:
+    """Relay confirmed cards from the scanner to the websocket clients.
+
+    The scanner already resolved & confirmed the card name (it voted on the
+    fuzzy-matched name over several reads), so there is nothing to look up here —
+    we just broadcast it.
+    """
     loop = asyncio.get_event_loop()
     while True:
         if not scanner:
             await asyncio.sleep(0.5)
             continue
         try:
-            # run_in_executor keeps the blocking queue.get off the event loop
-            cards = await loop.run_in_executor(
-                None, lambda: scanner.card_event_queue.get(timeout=0.3)
+            det = await loop.run_in_executor(
+                None, lambda: scanner.detection_queue.get(timeout=0.3)
             )
+        except queue.Empty:
+            continue  # no confirmed detections this interval — expected
         except Exception:
+            log.exception("Error reading detection queue; retrying.")
             await asyncio.sleep(0.05)
             continue
 
@@ -76,22 +86,18 @@ async def _relay_card_events() -> None:
 
         payload = json.dumps({
             "type": "detected",
-            "cards": [
-                {
-                    "raw": c.raw_ocr_text,
-                    "name": c.matched_name,
-                    "confidence": round(c.confidence, 3),
-                }
-                for c in cards
-                if c.matched_name
-            ],
+            "cards": [{
+                "name": det.name,
+                "confidence": round(det.confidence, 3),
+            }],
         })
 
         dead: list[WebSocket] = []
         for ws in _ws_clients:
             try:
                 await ws.send_text(payload)
-            except Exception:
+            except Exception as exc:
+                log.debug("Dropping WS client after failed detected send: %s", exc)
                 dead.append(ws)
         for ws in dead:
             _ws_clients.remove(ws)
@@ -236,7 +242,17 @@ async def get_cameras():
     cameras = list_cameras()
     current = scanner.current_source if scanner else 0
     rotation = scanner.rotation if scanner else 0
-    return {"cameras": cameras, "current": current, "rotation": rotation}
+    status = scanner.camera_status() if scanner else None
+    return {"cameras": cameras, "current": current, "rotation": rotation, "status": status}
+
+
+@app.get("/api/camera/status")
+async def camera_status():
+    """Lightweight poll for the camera lifecycle state (does NOT re-enumerate
+    devices). Lets the UI confirm we are actually receiving frames."""
+    if not scanner:
+        raise HTTPException(503, "Scanner not initialised")
+    return scanner.camera_status()
 
 
 @app.post("/api/cameras/select")

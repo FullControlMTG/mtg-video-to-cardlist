@@ -208,6 +208,11 @@ body {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.5; }
 }
+/* Camera-status badge: steady (no pulse) once we know the state. */
+#cam-status { animation: none; }
+.badge-ok   { background: rgba(63,185,80,0.18);  color: var(--accent2); }
+.badge-warn { background: rgba(210,153,34,0.18); color: #d29922; }
+.badge-err  { background: rgba(248,81,73,0.18);  color: var(--danger); }
 
 /* ── Detected cards ─────────────────────────────────────────────── */
 .detected-section {
