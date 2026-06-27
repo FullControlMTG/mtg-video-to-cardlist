@@ -8,103 +8,95 @@
 </head>
 <body>
 
-<div id="app">
+<header class="header">
+  <div class="header-left">
+    <span class="logo">&#9830; MTG Card Scanner</span>
+    <span class="status-dot" id="ws-dot" title="WebSocket status"></span>
+    <div class="camera-select-wrap">
+      <label class="camera-label" for="camera-select">&#x1F4F7;</label>
+      <select id="camera-select" title="Select camera">
+        <option value="">Loading cameras…</option>
+      </select>
+    </div>
+    <button class="btn-help" id="help-btn" title="Help &amp; instructions">?</button>
+  </div>
+  <div class="header-right">
+    <input
+      id="search-input"
+      type="search"
+      placeholder="Search card by name…"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <div id="search-results" class="search-dropdown" aria-live="polite"></div>
+  </div>
+</header>
 
-  <header class="header">
-    <div class="header-left">
-      <span class="logo">&#9830; MTG Card Scanner</span>
-      <span class="status-dot" id="ws-dot" title="WebSocket status"></span>
-      <div class="camera-select-wrap">
-        <label class="camera-label" for="camera-select">&#x1F4F7;</label>
-        <select id="camera-select" title="Select camera">
-          <option value="">Loading cameras…</option>
-        </select>
+<div class="layout" id="layout">
+
+  <!-- Left pane: video feed + detected cards -->
+  <div class="pane pane-left">
+    <section class="video-section">
+      <div class="section-title">
+        Live Scan
+        <span class="badge" id="cam-status" title="Camera connection state">camera: …</span>
+        <span class="badge" id="scan-badge">scanning…</span>
+        <button class="btn-ghost btn-rotate" id="rotate-btn" title="Rotate camera feed 90°">&#8635;</button>
       </div>
-      <button class="btn-help" id="help-btn" title="Help &amp; instructions">?</button>
-    </div>
-    <div class="header-right">
-      <input
-        id="search-input"
-        type="search"
-        placeholder="Search card by name…"
-        autocomplete="off"
-        spellcheck="false"
-      />
-      <div id="search-results" class="search-dropdown" aria-live="polite"></div>
-    </div>
-  </header>
+      <div class="video-wrapper">
+        <img id="video-feed" src="/video" alt="Video feed" />
+      </div>
+    </section>
 
-  <div class="layout" id="layout">
+    <section class="detected-section">
+      <div class="section-title">
+        Detected This Session
+        <button class="btn-ghost" id="clear-detected-btn">Clear All</button>
+      </div>
+      <div class="detected-grid" id="detected-grid">
+        <p class="empty-hint">Cards recognised by the camera will appear here.</p>
+      </div>
+    </section>
+  </div>
 
-    <!-- Left pane: video feed + detected cards -->
-    <div class="pane pane-left">
-      <section class="video-section">
-        <div class="section-title">
-          Live Scan
-          <span class="badge" id="cam-status" title="Camera connection state">camera: …</span>
-          <span class="badge" id="scan-badge">scanning…</span>
-          <button class="btn-ghost btn-rotate" id="rotate-btn" title="Rotate camera feed 90°">&#8635;</button>
-        </div>
-        <div class="video-wrapper">
-          <img id="video-feed" src="/video" alt="Video feed" />
-        </div>
-      </section>
+  <!-- Right pane: decklist. When .layout.deck-hidden is set, the column
+       narrows to a vertical strip and only the .deck-reopen button shows. -->
+  <div class="pane pane-right" id="pane-right">
 
-      <section class="detected-section">
-        <div class="section-title">
-          Detected This Session
-          <button class="btn-ghost" id="clear-detected-btn">Clear All</button>
-        </div>
-        <div class="detected-grid" id="detected-grid">
-          <p class="empty-hint">Cards recognised by the camera will appear here.</p>
-        </div>
-      </section>
-    </div>
+    <button class="deck-reopen" id="show-deck-btn" title="Show decklist">&#9664; Decklist</button>
 
-    <!-- Right pane: decklist -->
-    <div class="pane pane-right" id="pane-right">
-
-      <div class="deck-header">
-        <div class="deck-header-row deck-header-top">
-          <span class="deck-name" id="deck-name-display">Decklist</span>
-          <div class="deck-header-actions">
-            <button class="btn-icon" id="settings-btn" title="Deck settings">&#9881;</button>
-            <button class="btn-icon" id="toggle-deck-btn" title="Hide decklist">&#9654;</button>
-          </div>
-        </div>
-        <div class="deck-header-row">
-          <span class="deck-counts">
-            <span id="main-count">0</span> main &nbsp;/&nbsp; <span id="side-count">0</span> side
-          </span>
-        </div>
-        <div class="deck-header-row deck-tabs-row">
-          <button class="zone-tab active" data-zone="main">Main</button>
-          <button class="zone-tab" data-zone="side">Sideboard</button>
+    <div class="deck-header">
+      <div class="deck-header-row deck-header-top">
+        <span class="deck-name" id="deck-name-display">Decklist</span>
+        <div class="deck-header-actions">
+          <button class="btn-icon" id="settings-btn" title="Deck settings">&#9881;</button>
+          <button class="btn-icon" id="toggle-deck-btn" title="Hide decklist">&#9654;</button>
         </div>
       </div>
-
-      <div class="decklist-scroll" id="decklist-scroll">
-        <div id="decklist-main" class="decklist-zone"></div>
-        <div id="decklist-side" class="decklist-zone" style="display:none"></div>
+      <div class="deck-header-row">
+        <span class="deck-counts">
+          <span id="main-count">0</span> main &nbsp;/&nbsp; <span id="side-count">0</span> side
+        </span>
       </div>
-
-      <div class="export-bar">
-        <span class="export-label">Export</span>
-        <div class="export-buttons">
-          <button class="btn-export" data-fmt="moxfield">Moxfield</button>
-          <button class="btn-export" data-fmt="mtga">MTGA</button>
-          <button class="btn-export" data-fmt="mtgo">MTGO</button>
-          <button class="btn-export" data-fmt="text">Plain Text</button>
-        </div>
-        <button class="btn-danger" id="clear-deck-btn">Clear Deck</button>
+      <div class="deck-header-row deck-tabs-row">
+        <button class="zone-tab active" data-zone="main">Main</button>
+        <button class="zone-tab" data-zone="side">Sideboard</button>
       </div>
     </div>
 
-    <!-- Collapsed deck tab (visible when deck is hidden) -->
-    <div class="deck-collapsed" id="deck-collapsed" style="display:none">
-      <button id="show-deck-btn" title="Show decklist">&#9664; Decklist</button>
+    <div class="decklist-scroll" id="decklist-scroll">
+      <div id="decklist-main" class="decklist-zone"></div>
+      <div id="decklist-side" class="decklist-zone" style="display:none"></div>
     </div>
 
+    <div class="export-bar">
+      <span class="export-label">Export</span>
+      <button class="btn-export" data-fmt="moxfield">Moxfield</button>
+      <button class="btn-export" data-fmt="mtga">MTGA</button>
+      <button class="btn-export" data-fmt="mtgo">MTGO</button>
+      <button class="btn-export" data-fmt="text">Plain Text</button>
+      <button class="btn-danger" id="clear-deck-btn">Clear Deck</button>
+    </div>
   </div>
 
 </div>
@@ -196,6 +188,6 @@
   </div>
 </div>
 
-<script src="/static/app.js"></script>
+<script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

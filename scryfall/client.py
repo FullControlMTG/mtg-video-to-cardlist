@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
@@ -21,6 +23,18 @@ log = logging.getLogger(__name__)
 
 BULK_DATA_TTL_DAYS = 3
 _CACHE_META_FILE = CARD_NAMES_FILE.parent / "bulk_meta.json"
+
+# Match anything that's not a letter or digit — used to build a punctuation-
+# and whitespace-free search key so users can type "atraxa praetors voice" (or
+# "atraxapraetorsvoice") and still hit "Atraxa, Praetor's Voice".
+_NON_ALNUM = re.compile(r"[^a-z0-9]")
+
+
+def _normalize_for_search(s: str) -> str:
+    """Lowercase + strip diacritics + drop everything that isn't a letter/digit."""
+    nfd = unicodedata.normalize("NFD", s)
+    no_marks = "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+    return _NON_ALNUM.sub("", no_marks.lower())
 
 
 @dataclass
@@ -80,6 +94,9 @@ class ScryfallClient:
     def __init__(self) -> None:
         self._index: dict[str, CardData] = {}
         self._match_keys: list[str] = []   # lowercase names, cached for fuzzy matching
+        # Punctuation-stripped lookup table for the user-facing substring search.
+        # Built once after load so each query is one normalize + a linear scan.
+        self._search_keys: list[tuple[str, CardData]] = []
         self._loaded = False
         self._load_lock = asyncio.Lock()
 
@@ -94,6 +111,10 @@ class ScryfallClient:
                 log.info("Downloading Scryfall bulk data (this is a one-time ~30 MB download)…")
                 await self._download_and_cache()
             self._match_keys = list(self._index.keys())
+            self._search_keys = [
+                (_normalize_for_search(card.name), card)
+                for card in self._index.values()
+            ]
             self._loaded = True
             log.info("Scryfall index ready: %d cards.", len(self._index))
 
@@ -148,12 +169,19 @@ class ScryfallClient:
         return self._index.get(name.lower())
 
     def search(self, query: str, limit: int = 20) -> list[CardData]:
-        q = query.lower().strip()
+        """Punctuation/diacritic-insensitive substring search over card names.
+
+        Both the query and the index keys are normalised to lowercase letters
+        and digits only, so "praetors voice", "praetor's voice", and
+        "praetorsvoice" all match "Atraxa, Praetor's Voice". Cards whose
+        normalised name STARTS with the query are listed first.
+        """
+        q = _normalize_for_search(query)
         if not q:
             return []
-        results = [card for key, card in self._index.items() if q in key]
-        results.sort(key=lambda c: (not c.name.lower().startswith(q), c.name))
-        return results[:limit]
+        hits = [(key, card) for key, card in self._search_keys if q in key]
+        hits.sort(key=lambda kc: (not kc[0].startswith(q), kc[1].name))
+        return [card for _, card in hits[:limit]]
 
     def all_names(self) -> list[str]:
         return [c.name for c in self._index.values()]

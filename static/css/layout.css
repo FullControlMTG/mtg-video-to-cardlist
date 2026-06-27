@@ -1,0 +1,45 @@
+/* Two-column app grid: camera/detected pane on the left, deck sidebar
+   on the right. When `.deck-hidden` is on the layout, the right column
+   narrows to a 32px strip and the sidebar shows only its reopen button. */
+
+.layout {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  height: calc(100vh - 50px);
+  overflow: hidden;
+}
+.layout.deck-hidden { grid-template-columns: 1fr 32px; }
+
+.pane {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.pane-left  { grid-column: 1; border-right: 1px solid var(--border); }
+.pane-right { grid-column: 2; background: var(--surface); border-left: 1px solid var(--border); }
+
+/* Section title used inside both panes (e.g. "Live Scan", "Detected…"). */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* Narrow-screen fallback: stack panes vertically. */
+@media (max-width: 768px) {
+  .layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+    height: auto;
+  }
+  .pane-left  { max-height: 65vh; }
+  .pane-right { height: 60vh; }
+}

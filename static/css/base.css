@@ -1,0 +1,36 @@
+/* Reset, theme variables, body, scrollbar. */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  /* Tell the browser this app is dark so any remaining native UI we can't
+     style (the `confirm()` dialog, form-control accents, scrollbar fallback)
+     renders in dark mode instead of bright OS default. */
+  color-scheme: dark;
+
+  --bg:        #0e1117;
+  --surface:   #161b22;
+  --surface2:  #1c2230;
+  --border:    #30363d;
+  --accent:    #58a6ff;
+  --accent2:   #3fb950;
+  --danger:    #f85149;
+  --text:      #e6edf3;
+  --text-muted:#8b949e;
+  --card-w:    120px;
+  --radius:    8px;
+  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }

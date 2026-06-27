@@ -1,0 +1,57 @@
+/* App-wide top bar: logo, WS dot, camera select, help, and search. */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  gap: 12px;
+}
+.header-left { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.header-right { position: relative; flex: 1; max-width: 380px; }
+
+.logo { font-weight: 700; font-size: 1.05rem; letter-spacing: 0.5px; }
+
+.status-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.3s;
+}
+.status-dot.connected { background: var(--accent2); }
+.status-dot.error     { background: var(--danger); }
+
+.camera-select-wrap { display: flex; align-items: center; gap: 5px; }
+.camera-label { font-size: 1rem; line-height: 1; cursor: default; user-select: none; }
+
+#camera-select {
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  max-width: 190px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+#camera-select:focus { border-color: var(--accent); }
+
+.btn-help {
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-help:hover { color: var(--accent); border-color: var(--accent); }

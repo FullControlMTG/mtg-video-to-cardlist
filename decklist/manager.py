@@ -226,14 +226,20 @@ class DecklistManager:
         return sum(e.count for e in self._main.values()) + sum(e.count for e in self._side.values())
 
     def export(self, fmt: ExportFormat = "text") -> str:
-        if fmt in ("text", "moxfield", "mtgo"):
-            return self._export_plain(fmt)
+        if fmt == "text":
+            return self._export_text()
+        if fmt == "moxfield":
+            return self._export_moxfield()
         if fmt in ("mtga", "arena"):
-            return self._export_arena()
+            return self._export_mtga()
+        if fmt == "mtgo":
+            return self._export_mtgo()
         raise ValueError(f"Unknown export format: {fmt!r}")
 
-    def _meta_comments(self) -> list[str]:
-        lines = []
+    def _export_text(self) -> str:
+        # Plain text is for humans, so we keep `//` metadata comments. No
+        # destination tool consumes this directly.
+        lines: list[str] = []
         if self._meta.name:
             lines.append(f"// Name: {self._meta.name}")
         if self._meta.format:
@@ -243,10 +249,6 @@ class DecklistManager:
         if self._meta.notes:
             for note_line in self._meta.notes.splitlines():
                 lines.append(f"// {note_line}")
-        return lines
-
-    def _export_plain(self, fmt: ExportFormat) -> str:
-        lines: list[str] = self._meta_comments()
         if lines:
             lines.append("")
 
@@ -268,14 +270,45 @@ class DecklistManager:
 
         return "\n".join(lines)
 
-    def _export_arena(self) -> str:
+    def _export_moxfield(self) -> str:
+        # Moxfield's text importer has no comment or metadata-line syntax — `#`
+        # is reserved for tags and any other non-card line errors. Drop deck
+        # name/format/notes; the user sets them in the Moxfield UI after import.
+        lines: list[str] = []
+
+        if self._meta.is_commander_format and self._meta.commander:
+            lines.append("Commander")
+            lines.append(f"1 {self._meta.commander}")
+            lines.append("")
+
+        lines.append("Deck")
+        for entry in self._main.values():
+            if self._meta.is_commander_format and entry.name == self._meta.commander:
+                continue
+            lines.append(f"{entry.count} {entry.name}")
+
+        if self._side:
+            lines.append("")
+            lines.append("Sideboard")
+            for entry in self._side.values():
+                lines.append(f"{entry.count} {entry.name}")
+
+        return "\n".join(lines)
+
+    def _export_mtga(self) -> str:
+        # MTGA has no comment syntax (`//` collides with DFC names and errors
+        # as "invalid line"). It DOES accept an `About` block with a `Name <…>`
+        # line for the deck name, so we use that and drop format/notes.
         def card_line(entry: DeckEntry) -> str:
             if entry.set_code and entry.collector_number:
                 return f"{entry.count} {entry.name} ({entry.set_code.upper()}) {entry.collector_number}"
             return f"{entry.count} {entry.name}"
 
-        lines: list[str] = self._meta_comments()
-        if lines:
+        lines: list[str] = []
+
+        if self._meta.name:
+            lines.append("About")
+            lines.append(f"Name {self._meta.name}")
             lines.append("")
 
         if self._meta.is_commander_format and self._meta.commander:
@@ -295,6 +328,17 @@ class DecklistManager:
             for entry in self._side.values():
                 lines.append(card_line(entry))
 
+        return "\n".join(lines)
+
+    def _export_mtgo(self) -> str:
+        # MTGO's plain-text (.dec) format has no comment or metadata-line
+        # syntax; the deck name comes from the filename, not the body.
+        # Sideboard is delimited by `Sideboard` on its own line.
+        lines: list[str] = [f"{e.count} {e.name}" for e in self._main.values()]
+        if self._side:
+            lines.append("")
+            lines.append("Sideboard")
+            lines.extend(f"{e.count} {e.name}" for e in self._side.values())
         return "\n".join(lines)
 
 
