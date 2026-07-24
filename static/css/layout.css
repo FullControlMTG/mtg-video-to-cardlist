@@ -36,53 +36,52 @@
 
 /* Resize handles between adjacent columns / panels. Interactive dividers —
    drag to change the flex-grow ratio of the two elements on either side.
-   The hit area is 12px so it's easy to grab; the negative margin pulls
-   that hit area into the neighbouring panels' edges so hovering the top
-   or bottom of a stacked panel (or the left/right of a side-by-side
-   panel) gives the resize cursor before the panel-header's grab cursor
-   takes over. The actual visible divider is a 4px bar drawn by ::before
-   so the extended hit area stays invisible. */
+   The hit area is generous; the negative margin pulls it into the
+   neighbouring panels' edges so hovering the top/bottom of a stacked
+   panel (or the left/right of a side-by-side panel) gives the resize
+   cursor before the panel-header's grab cursor takes over.
+
+   The visible 4px divider is painted with a linear-gradient on the
+   handle's own background — no ::before pseudo — so it renders
+   reliably in both axes. Values used:
+     --div-c:   divider colour at rest / on hover
+     --div-w:   divider bar thickness
+   Bar sits centered along the cross-axis of the handle. */
 .resize-handle {
-  position: relative;
+  --div-c: var(--border);
   flex-shrink: 0;
-  background: transparent;
   z-index: 5;
 }
+.resize-handle:hover,
+.resize-handle.dragging { --div-c: var(--accent); }
+
 .resize-handle-col {
   width: 12px;
   margin: 0 -4px;
   cursor: col-resize;
+  background: linear-gradient(
+    to right,
+    transparent calc(50% - 2px),
+    var(--div-c) calc(50% - 2px) calc(50% + 2px),
+    transparent calc(50% + 2px)
+  );
 }
 .resize-handle-row {
   /* Row handle is chunkier than col handle because it only spans a
      column's width, not the full pane height — smaller aiming strip,
-     so needs a taller hit zone. -6px margin means the top 6px of the
-     lower panel and bottom 6px of the upper panel both trigger the
-     resize cursor before the panel-header's grab cursor takes over. */
-  height: 18px;
-  margin: -6px 0;
+     so needs a taller hit zone. -10px margin matches the panel-header's
+     10px top/bottom padding: the resize cursor covers the header's
+     empty padding area, leaving the text/badge area for the grab cursor. */
+  height: 24px;
+  margin: -10px 0;
   cursor: row-resize;
+  background: linear-gradient(
+    to bottom,
+    transparent calc(50% - 2px),
+    var(--div-c) calc(50% - 2px) calc(50% + 2px),
+    transparent calc(50% + 2px)
+  );
 }
-.resize-handle::before {
-  content: '';
-  position: absolute;
-  background: var(--border);
-  transition: background 0.15s;
-}
-.resize-handle-col::before {
-  top: 0; bottom: 0;
-  left: 50%;
-  width: 4px;
-  transform: translateX(-50%);
-}
-.resize-handle-row::before {
-  left: 0; right: 0;
-  top: 50%;
-  height: 4px;
-  transform: translateY(-50%);
-}
-.resize-handle:hover::before,
-.resize-handle.dragging::before { background: var(--accent); }
 #panel-deck { background: var(--surface); }
 
 .panel-header {

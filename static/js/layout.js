@@ -82,13 +82,15 @@ function render() {
     return col;
   });
 
-  // Row handles between adjacent panels inside each column.
-  cols.forEach((col, colIdx) => {
-    const colIds = state.columns[colIdx];
-    for (let r = 0; r < colIds.length - 1; r++) {
-      const prev = document.getElementById(colIds[r]);
-      const next = document.getElementById(colIds[r + 1]);
-      if (prev && next) col.insertBefore(makeHandle('row', prev, next), next);
+  // Row handles between adjacent panels inside each column. We query the
+  // col's own direct children instead of document.getElementById because
+  // at this point the cols are still detached from the document — the
+  // panels are already inside them, but the cols haven't been appended
+  // to .layout yet, so getElementById would return null.
+  cols.forEach(col => {
+    const panels = Array.from(col.querySelectorAll(':scope > .panel'));
+    for (let r = 0; r < panels.length - 1; r++) {
+      col.insertBefore(makeHandle('row', panels[r], panels[r + 1]), panels[r + 1]);
     }
   });
 
