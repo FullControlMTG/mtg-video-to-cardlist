@@ -12,6 +12,14 @@ const scanBadge    = $('scan-badge');
 
 const EMPTY_HINT = '<p class="empty-hint">Cards recognised by the camera will appear here.</p>';
 
+// Update the scan badge text and toggle the pulse animation. Pulse only
+// while we're actively awaiting a scan (empty grid); once cards land the
+// badge shows a stable count.
+function updateScanBadge() {
+  updateScanBadge();
+  scanBadge.classList.toggle('pulsing', n === 0);
+}
+
 export async function handleDetected(cards) {
   for (const c of cards) {
     if (!c.name || state.detectedCards.has(c.name)) continue;
@@ -24,8 +32,7 @@ export async function handleDetected(cards) {
     renderDetectedCard(c.name, cardData);
   }
 
-  const n = state.detectedCards.size;
-  scanBadge.textContent = n ? `${n} found` : 'scanning…';
+  updateScanBadge();
 }
 
 function renderDetectedCard(name, cardData) {
@@ -61,7 +68,7 @@ function renderDetectedCard(name, cardData) {
     state.detectedCards.delete(name);
     div.remove();
     if (!detectedGrid.querySelector('.detected-card')) detectedGrid.innerHTML = EMPTY_HINT;
-    scanBadge.textContent = state.detectedCards.size ? `${state.detectedCards.size} found` : 'scanning…';
+    updateScanBadge();
   });
 
   const addBtn = div.querySelector('.add-overlay-btn');
@@ -93,5 +100,5 @@ function renderDetectedCard(name, cardData) {
 $('clear-detected-btn').addEventListener('click', () => {
   state.detectedCards.clear();
   detectedGrid.innerHTML = EMPTY_HINT;
-  scanBadge.textContent = 'scanning…';
+  updateScanBadge();
 });

@@ -20,19 +20,20 @@
     </div>
     <button class="btn-help" id="help-btn" title="Help &amp; instructions">?</button>
   </div>
-  <div class="header-right">
+  <div class="header-right" role="search">
     <input
       id="search-input"
       type="search"
       placeholder="Search card by name…"
       autocomplete="off"
       spellcheck="false"
+      aria-label="Search cards by name"
     />
     <div id="search-results" class="search-dropdown" aria-live="polite"></div>
   </div>
 </header>
 
-<div class="layout" id="layout">
+<main class="layout" id="layout">
 
   <!-- Left pane: video feed + detected cards -->
   <div class="pane pane-left">
@@ -40,7 +41,7 @@
       <div class="section-title">
         Live Scan
         <span class="badge" id="cam-status" title="Camera connection state">camera: …</span>
-        <span class="badge" id="scan-badge">scanning…</span>
+        <span class="badge pulsing" id="scan-badge">scanning…</span>
         <button class="btn-ghost btn-rotate" id="rotate-btn" title="Rotate camera feed 90°">&#8635;</button>
       </div>
       <div class="video-wrapper">
@@ -61,7 +62,7 @@
 
   <!-- Right pane: decklist. When .layout.deck-hidden is set, the column
        narrows to a vertical strip and only the .deck-reopen button shows. -->
-  <div class="pane pane-right" id="pane-right">
+  <aside class="pane pane-right" id="pane-right" aria-label="Decklist">
 
     <button class="deck-reopen" id="show-deck-btn" title="Show decklist">&#9664; Decklist</button>
 
@@ -86,7 +87,7 @@
 
     <div class="decklist-scroll" id="decklist-scroll">
       <div id="decklist-main" class="decklist-zone"></div>
-      <div id="decklist-side" class="decklist-zone" style="display:none"></div>
+      <div id="decklist-side" class="decklist-zone" hidden></div>
     </div>
 
     <div class="export-bar">
@@ -97,9 +98,9 @@
       <button class="btn-export" data-fmt="text">Plain Text</button>
       <button class="btn-danger" id="clear-deck-btn">Clear Deck</button>
     </div>
-  </div>
+  </aside>
 
-</div>
+</main>
 
 <!-- Card detail modal -->
 <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-label="Card detail">

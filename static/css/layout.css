@@ -12,6 +12,9 @@
   height: calc(100dvh - var(--header-h));
   overflow: hidden;
 }
+/* Deck sidebar collapse: the grid-column resize lives here to keep the
+   layout definition self-contained. Child visibility rules for the
+   collapsed state live in deck.css alongside the .deck-reopen tab. */
 .layout.deck-hidden { grid-template-columns: 1fr var(--sidebar-collapsed-w); }
 
 .pane {

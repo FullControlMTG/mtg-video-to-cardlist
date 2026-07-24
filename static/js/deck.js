@@ -147,8 +147,8 @@ document.querySelectorAll('.zone-tab').forEach(tab => {
     document.querySelectorAll('.zone-tab').forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     state.activeZone = tab.dataset.zone;
-    deckMain.style.display = state.activeZone === 'main' ? '' : 'none';
-    deckSide.style.display = state.activeZone === 'side' ? '' : 'none';
+    deckMain.hidden = state.activeZone !== 'main';
+    deckSide.hidden = state.activeZone !== 'side';
   });
 });
 
