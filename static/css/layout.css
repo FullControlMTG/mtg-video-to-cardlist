@@ -1,14 +1,15 @@
 /* Two-column app grid: camera/detected pane on the left, deck sidebar
    on the right. When `.deck-hidden` is on the layout, the right column
-   narrows to a 32px strip and the sidebar shows only its reopen button. */
+   narrows from --sidebar-w to --sidebar-collapsed-w and the sidebar
+   shows only its reopen button. */
 
 .layout {
   display: grid;
-  grid-template-columns: 1fr 360px;
-  height: calc(100vh - 50px);
+  grid-template-columns: 1fr var(--sidebar-w);
+  height: calc(100vh - var(--header-h));
   overflow: hidden;
 }
-.layout.deck-hidden { grid-template-columns: 1fr 32px; }
+.layout.deck-hidden { grid-template-columns: 1fr var(--sidebar-collapsed-w); }
 
 .pane {
   display: flex;
