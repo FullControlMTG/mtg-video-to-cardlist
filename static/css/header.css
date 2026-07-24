@@ -40,7 +40,6 @@
   font-size: 0.8rem;
   cursor: pointer;
   max-width: 190px;
-  outline: none;
   transition: border-color 0.2s;
 }
 #camera-select:focus { border-color: var(--accent); }

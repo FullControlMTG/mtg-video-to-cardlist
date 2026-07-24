@@ -8,7 +8,6 @@
   background: var(--bg);
   color: var(--text);
   font-size: 0.9rem;
-  outline: none;
   transition: border-color 0.2s;
 }
 #search-input:focus { border-color: var(--accent); }

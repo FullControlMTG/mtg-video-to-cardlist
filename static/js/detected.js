@@ -41,6 +41,10 @@ function renderDetectedCard(name, cardData) {
   const div = document.createElement('div');
   div.className = 'detected-card';
   div.dataset.name = name;
+  // role/tabindex so keyboard users can add via Enter/Space on the card.
+  div.setAttribute('role', 'button');
+  div.setAttribute('tabindex', '0');
+  div.setAttribute('aria-label', `Add ${name} to deck`);
   div.innerHTML = `
     <img src="${escHtml(img)}" alt="${escHtml(name)}" loading="lazy"
          onerror="this.style.visibility='hidden'" />
@@ -71,6 +75,14 @@ function renderDetectedCard(name, cardData) {
   div.addEventListener('click', e => {
     if (e.target === dismissBtn || e.target === addBtn) return;
     doAdd(e);
+  });
+  div.addEventListener('keydown', e => {
+    // Only handle keys on the card itself; inner buttons manage their own.
+    if (e.target !== div) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      doAdd(e);
+    }
   });
 
   detectedGrid.appendChild(div);

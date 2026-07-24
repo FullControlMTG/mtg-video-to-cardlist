@@ -50,7 +50,12 @@ function renderZone(zone, entries) {
   }
 
   el.innerHTML = entries.map(e => `
-    <div class="deck-row" data-name="${escHtml(e.name)}" data-zone="${zone}">
+    <div class="deck-row"
+         role="button"
+         tabindex="0"
+         aria-label="Show details for ${escHtml(e.name)}"
+         data-name="${escHtml(e.name)}"
+         data-zone="${zone}">
       <img class="deck-row-thumb"
            src="${escHtml(e.image_uri || '')}"
            alt="${escHtml(e.name)}"
@@ -80,11 +85,23 @@ function renderZone(zone, entries) {
   // Row body → open detail modal. Skip clicks on the controls cluster
   // (minus/set-count) and the X remove button — those have their own handlers.
   el.querySelectorAll('.deck-row').forEach(row => {
+    const openDetail = () => {
+      const entry = entries.find(x => x.name === row.dataset.name);
+      if (entry) openCardModal(entry);
+    };
     row.addEventListener('click', e => {
       if (e.target.closest('.deck-row-controls') ||
           e.target.classList.contains('deck-row-remove')) return;
-      const entry = entries.find(x => x.name === row.dataset.name);
-      if (entry) openCardModal(entry);
+      openDetail();
+    });
+    row.addEventListener('keydown', e => {
+      // Row is role=button — Enter/Space should activate it. Ignore when
+      // focus is on a nested control (the inner buttons handle their own keys).
+      if (e.target !== row) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openDetail();
+      }
     });
   });
 

@@ -74,7 +74,11 @@ function renderSearchResults(results) {
   const byName = Object.fromEntries(results.map(c => [c.name, c]));
 
   searchResults.innerHTML = results.map(c => `
-    <div class="search-result-item" data-name="${escHtml(c.name)}" tabindex="0">
+    <div class="search-result-item"
+         role="button"
+         tabindex="0"
+         aria-label="Show details for ${escHtml(c.name)}"
+         data-name="${escHtml(c.name)}">
       <img src="${escHtml(c.image_uri || '')}" alt="${escHtml(c.name)}"
            onerror="this.style.visibility='hidden'" />
       <div>
@@ -88,10 +92,20 @@ function renderSearchResults(results) {
   searchResults.classList.add('open');
 
   searchResults.querySelectorAll('.search-result-item').forEach(item => {
-    item.addEventListener('click', e => {
-      if (e.target.classList.contains('search-add-btn')) return;
+    const openDetail = () => {
       searchResults.classList.remove('open');
       openCardModal(byName[item.dataset.name]);
+    };
+    item.addEventListener('click', e => {
+      if (e.target.classList.contains('search-add-btn')) return;
+      openDetail();
+    });
+    item.addEventListener('keydown', e => {
+      if (e.target !== item) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openDetail();
+      }
     });
   });
 

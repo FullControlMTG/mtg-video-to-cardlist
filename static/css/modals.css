@@ -135,7 +135,6 @@
   font-size: 0.82rem;
   padding: 12px;
   resize: vertical;
-  outline: none;
 }
 .export-actions {
   display: flex;
@@ -167,7 +166,6 @@
   color: var(--text);
   font-size: 0.88rem;
   padding: 6px 10px;
-  outline: none;
   font-family: inherit;
   resize: vertical;
 }
@@ -202,7 +200,6 @@
   color: var(--text);
   font-size: 1rem;
   text-align: center;
-  outline: none;
   font-family: inherit;
 }
 .prompt-input:focus { border-color: var(--accent); }
