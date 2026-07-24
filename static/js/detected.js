@@ -16,7 +16,8 @@ const EMPTY_HINT = '<p class="empty-hint">Cards recognised by the camera will ap
 // while we're actively awaiting a scan (empty grid); once cards land the
 // badge shows a stable count.
 function updateScanBadge() {
-  updateScanBadge();
+  const n = state.detectedCards.size;
+  scanBadge.textContent = n ? `${n} found` : 'scanning…';
   scanBadge.classList.toggle('pulsing', n === 0);
 }
 
