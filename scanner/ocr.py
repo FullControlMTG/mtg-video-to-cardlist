@@ -63,6 +63,15 @@ def ocr_name_strip(card_img: np.ndarray) -> str:
         C=8,
     )
 
+    # Black-frame cards (e.g. Barrowgoyf) have WHITE title text on a dark
+    # background, so the threshold above yields white text on black — the
+    # inverse of what EasyOCR expects and what it fails on. Detect that by
+    # pixel majority (background dominates the strip: light frames leave
+    # mostly white, dark frames leave mostly black) and flip so text is
+    # always dark-on-light before OCR.
+    if int((proc == 0).sum()) > int((proc == 255).sum()):
+        proc = cv2.bitwise_not(proc)
+
     # We already cropped to the name strip, so EasyOCR's text *detection* stage
     # (the heavy CRAFT model) is redundant for the fast path: calling the
     # recognizer directly on the crop is ~20-25x faster (~7 ms vs ~150-190 ms).
