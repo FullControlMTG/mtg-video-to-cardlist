@@ -14,6 +14,11 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* Grid items default to `min-height: auto`, which means "at least as tall
+     as content" — that lets a big inner list push past the grid track and
+     defeat overflow:hidden. Force 0 so children with overflow:auto actually
+     scroll inside their own bounds. */
+  min-height: 0;
 }
 .pane-left  { grid-column: 1; border-right: 1px solid var(--border); }
 .pane-right { grid-column: 2; background: var(--surface); border-left: 1px solid var(--border); }
@@ -33,13 +38,20 @@
   flex-shrink: 0;
 }
 
-/* Narrow-screen fallback: stack panes vertically. */
+/* Narrow-screen fallback: stack panes vertically inside the same viewport
+   budget as the desktop layout. Uses grid-row fractions so the two panes
+   share the available height — the previous version set 65vh + 60vh which
+   totalled 125vh and caused a page-level scroll on top of pane scrolls. */
 @media (max-width: 768px) {
   .layout {
     grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
-    height: auto;
+    grid-template-rows: 1fr 1fr;
   }
-  .pane-left  { max-height: 65vh; }
-  .pane-right { height: 60vh; }
+  /* Collapsing the sidebar on top of a stacked layout should shrink its
+     row, not its column. 44px is a comfortable tap target for the reopen
+     button lying horizontally along the bottom edge. */
+  .layout.deck-hidden {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 44px;
+  }
 }

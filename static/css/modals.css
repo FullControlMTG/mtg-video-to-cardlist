@@ -22,6 +22,10 @@
   overflow-y: auto;
   position: relative;
   padding: 24px;
+  /* Flex column lets the close button be a sticky first child; it also
+     lets sticky work for the export modal's header row. */
+  display: flex;
+  flex-direction: column;
   animation: modal-in 0.2s ease;
 }
 @keyframes modal-in {
@@ -29,10 +33,18 @@
   to   { transform: scale(1);    opacity: 1; }
 }
 .modal-close {
-  position: absolute;
-  top: 12px; right: 14px;
-  background: transparent;
+  /* Sticky (was absolute) so the close button stays visible when a long
+     modal (help, settings) scrolls its contents. Negative margins pull
+     the button up into the .modal padding to preserve the corner look. */
+  position: sticky;
+  top: 0;
+  align-self: flex-end;
+  z-index: 1;
+  margin: -12px -12px 4px auto;
+  padding: 4px 10px;
+  background: var(--surface);
   border: none;
+  border-radius: 8px;
   color: var(--text-muted);
   font-size: 1.4rem;
   cursor: pointer;
@@ -95,6 +107,21 @@
   font-weight: 700;
   font-size: 1rem;
   margin-bottom: 12px;
+  /* The close button lives inside this header, so pin the whole header to
+     the top of the scrolling modal instead of relying on the generic
+     sticky-.modal-close rule (which only works for direct-child closes). */
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  z-index: 1;
+  padding: 4px 0 8px;
+}
+.modal-export .modal-close {
+  /* This modal handles its own close positioning via .modal-export-header;
+     don't apply the outer sticky/negative-margin tweaks. */
+  position: static;
+  margin: 0;
+  padding: 0 4px;
 }
 #export-text {
   width: 100%;

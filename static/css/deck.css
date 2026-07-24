@@ -9,7 +9,11 @@
 .deck-header-row {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding: 8px 14px;
+  /* Allow flex children with text-overflow:ellipsis (.deck-name) to shrink
+     below their intrinsic content width instead of pushing siblings off. */
+  min-width: 0;
 }
 .deck-header-top {
   justify-content: space-between;
@@ -17,13 +21,15 @@
 }
 .deck-header-row + .deck-header-row { padding-top: 0; }
 .deck-name {
+  flex: 1;
+  min-width: 0;
   font-weight: 700;
   font-size: 0.9rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.deck-header-actions { display: flex; gap: 4px; align-items: center; }
+.deck-header-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 .deck-counts { font-size: 0.78rem; color: var(--text-muted); }
 
 .deck-tabs-row { padding-top: 0; padding-bottom: 0; gap: 2px; }
@@ -42,6 +48,7 @@
 
 .decklist-scroll {
   flex: 1;
+  min-height: 0;   /* let the deck list actually scroll instead of pushing past the pane */
   overflow-y: auto;
   padding: 8px 0;
 }
@@ -177,3 +184,9 @@
 .layout.deck-hidden .pane-right > .decklist-scroll,
 .layout.deck-hidden .pane-right > .export-bar { display: none; }
 .layout.deck-hidden .deck-reopen { display: block; }
+
+/* On the stacked mobile layout the sidebar becomes a bottom bar; the tab
+   text should be horizontal to match. */
+@media (max-width: 768px) {
+  .deck-reopen { writing-mode: horizontal-tb; }
+}
