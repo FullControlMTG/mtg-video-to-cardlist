@@ -32,6 +32,11 @@ function renderDetectedCard(name, cardData) {
   const hint = detectedGrid.querySelector('.empty-hint');
   if (hint) hint.remove();
 
+  // Only auto-scroll if the user was already near the bottom — don't yank
+  // them away from an earlier card they might be inspecting.
+  const wasAtBottom =
+    detectedGrid.scrollHeight - detectedGrid.scrollTop - detectedGrid.clientHeight < 40;
+
   const img = cardData?.image_uri || '';
   const div = document.createElement('div');
   div.className = 'detected-card';
@@ -69,6 +74,8 @@ function renderDetectedCard(name, cardData) {
   });
 
   detectedGrid.appendChild(div);
+
+  if (wasAtBottom) detectedGrid.scrollTop = detectedGrid.scrollHeight;
 }
 
 $('clear-detected-btn').addEventListener('click', () => {
