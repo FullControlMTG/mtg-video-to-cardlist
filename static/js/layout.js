@@ -1,46 +1,62 @@
-// Edge-based panel docking.
+// Edge-based panel docking with resize handles.
 //
-// Layout is stored as an array of columns; each column is an ordered
-// list of panel IDs. The DOM mirrors this: .layout is a flex row of
-// .layout-column elements, each a flex column of .panel elements.
-// Rendering reparents the actual .panel nodes into the correct column
-// (moving DOM nodes, not innerHTML rewriting), so event listeners and
-// child state — the video stream, deck rows, etc. — are preserved.
+// Layout state:
+//   {
+//     columns:     [['panel-a', 'panel-b'], ['panel-c']],   // ordered
+//     columnSizes: [1, 1],                                   // flex-grow per column
+//     panelSizes:  { 'panel-a': 1, 'panel-b': 1, 'panel-c': 1 }, // flex-grow per panel
+//   }
+//
+// The DOM mirrors the model: .layout is a flex row of .layout-column
+// elements, each a flex column of .panel elements, with .resize-handle
+// nodes interleaved between adjacent siblings on both axes. Panels are
+// reparented (not re-rendered) so the video stream, deck rows, and
+// other stateful child content survive drops.
 //
 // Dropping on a panel snaps to the nearest edge and inserts the
 // dragged panel there:
 //   left/right  → new column on that side of the target's column
 //   top/bottom  → adjacent row inside the target's column
 //
+// Dragging a resize handle adjusts the flex-grow of the two adjacent
+// elements proportionally so the total size of the pair is preserved.
+//
 // Layout persists to localStorage.
 
-const STORAGE_KEY = 'layout.columns';
+const STORAGE_KEY = 'layout.state';
 const PANEL_IDS = ['panel-video', 'panel-detected', 'panel-deck'];
-const DEFAULT_LAYOUT = [
-  ['panel-video', 'panel-detected'],
-  ['panel-deck'],
-];
+const MIN_SIZE = 80;   // px — minimum size any panel or column can be resized to
+
+const DEFAULT_STATE = () => ({
+  columns:     [['panel-video', 'panel-detected'], ['panel-deck']],
+  columnSizes: [1, 1],
+  panelSizes:  { 'panel-video': 1, 'panel-detected': 1, 'panel-deck': 1 },
+});
 
 const layoutEl = document.getElementById('layout');
-let columns = load() || DEFAULT_LAYOUT;
+let state = load() || DEFAULT_STATE();
 let draggedId = null;
 
 // ── Persistence ────────────────────────────────────────────────────
 function save() {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(columns)); } catch { /* private mode */ }
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* private mode */ }
 }
 
 function load() {
   let raw;
   try { raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch { return null; }
-  // Validate: an array of arrays that together contain each panel exactly once.
-  if (!Array.isArray(raw) || !raw.every(c => Array.isArray(c))) return null;
-  const flat = raw.flat();
+  if (!raw || typeof raw !== 'object') return null;
+  if (!Array.isArray(raw.columns) || !raw.columns.every(c => Array.isArray(c))) return null;
+  const flat = raw.columns.flat();
   const wanted = new Set(PANEL_IDS);
   if (flat.length !== wanted.size || !flat.every(id => wanted.has(id))) return null;
   if (new Set(flat).size !== flat.length) return null;
+  if (!Array.isArray(raw.columnSizes) || raw.columnSizes.length !== raw.columns.length) return null;
+  if (!raw.panelSizes || typeof raw.panelSizes !== 'object') return null;
   return raw;
 }
+
+function avg(nums) { return nums.reduce((a, b) => a + b, 0) / nums.length; }
 
 // ── Rendering ──────────────────────────────────────────────────────
 function render() {
@@ -48,37 +64,63 @@ function render() {
   // them via appendChild), THEN remove the old ones. Doing it the other
   // way round detaches the panels from the document before we can
   // reparent them — getElementById would then return null and .layout
-  // would render empty (grey background bug).
+  // would render empty.
   const oldColumns = Array.from(
-    layoutEl.querySelectorAll(':scope > .layout-column')
+    layoutEl.querySelectorAll(':scope > .layout-column, :scope > .resize-handle')
   );
 
-  columns.forEach(colIds => {
+  const cols = state.columns.map((colIds, colIdx) => {
     const col = document.createElement('div');
     col.className = 'layout-column';
+    col.style.flex = `${state.columnSizes[colIdx]} 1 0`;
     colIds.forEach(id => {
       const panel = document.getElementById(id);
-      if (panel) col.appendChild(panel);   // moves; panel stays in document
+      if (!panel) return;
+      panel.style.flex = `${state.panelSizes[id] ?? 1} 1 0`;
+      col.appendChild(panel);
     });
+    return col;
+  });
+
+  // Row handles between adjacent panels inside each column.
+  cols.forEach((col, colIdx) => {
+    const colIds = state.columns[colIdx];
+    for (let r = 0; r < colIds.length - 1; r++) {
+      const prev = document.getElementById(colIds[r]);
+      const next = document.getElementById(colIds[r + 1]);
+      if (prev && next) col.insertBefore(makeHandle('row', prev, next), next);
+    }
+  });
+
+  // Attach columns with column handles between them.
+  cols.forEach((col, i) => {
+    if (i > 0) layoutEl.appendChild(makeHandle('col', cols[i - 1], col));
     layoutEl.appendChild(col);
   });
 
-  oldColumns.forEach(c => c.remove());     // now empty, safe to drop
+  oldColumns.forEach(el => el.remove());
 }
 
 // ── Model mutation ─────────────────────────────────────────────────
 function findLocation(id) {
-  for (let c = 0; c < columns.length; c++) {
-    const r = columns[c].indexOf(id);
+  for (let c = 0; c < state.columns.length; c++) {
+    const r = state.columns[c].indexOf(id);
     if (r !== -1) return { c, r };
   }
   return null;
 }
 
 function removePanel(id) {
-  columns = columns
-    .map(col => col.filter(p => p !== id))
-    .filter(col => col.length > 0);
+  for (let c = 0; c < state.columns.length; c++) {
+    const r = state.columns[c].indexOf(id);
+    if (r === -1) continue;
+    state.columns[c].splice(r, 1);
+    if (state.columns[c].length === 0) {
+      state.columns.splice(c, 1);
+      state.columnSizes.splice(c, 1);
+    }
+    return;
+  }
 }
 
 function dropRelative(draggedId, targetId, side) {
@@ -89,16 +131,27 @@ function dropRelative(draggedId, targetId, side) {
   if (!loc) return;
   const { c, r } = loc;
 
-  if      (side === 'left')   columns.splice(c,     0, [draggedId]);
-  else if (side === 'right')  columns.splice(c + 1, 0, [draggedId]);
-  else if (side === 'top')    columns[c].splice(r,     0, draggedId);
-  else if (side === 'bottom') columns[c].splice(r + 1, 0, draggedId);
+  if (side === 'left' || side === 'right') {
+    // New column at c or c+1 — inherit the average size of existing columns
+    // so it isn't crushed next to already-resized neighbours.
+    const insertAt = side === 'left' ? c : c + 1;
+    state.columns.splice(insertAt, 0, [draggedId]);
+    state.columnSizes.splice(insertAt, 0, avg(state.columnSizes));
+  } else if (side === 'top' || side === 'bottom') {
+    const insertAt = side === 'top' ? r : r + 1;
+    state.columns[c].splice(insertAt, 0, draggedId);
+    // Panel keeps whatever size it had, but if it's the first time it lands
+    // here, seed with the average of siblings.
+    if (state.panelSizes[draggedId] == null) {
+      state.panelSizes[draggedId] = avg(state.columns[c].map(id => state.panelSizes[id] ?? 1));
+    }
+  }
 
   save();
   render();
 }
 
-// ── Edge detection ─────────────────────────────────────────────────
+// ── Edge detection (for docking) ───────────────────────────────────
 function nearestEdge(x, y, rect) {
   const dt = y - rect.top;
   const db = rect.bottom - y;
@@ -111,15 +164,63 @@ function nearestEdge(x, y, rect) {
   return 'right';
 }
 
-function setDropIndicator(panel, side) {
-  panel.dataset.dropSide = side;
-}
 function clearAllIndicators() {
   document.querySelectorAll('.panel[data-drop-side]')
     .forEach(p => delete p.dataset.dropSide);
 }
 
-// ── Wiring per panel ───────────────────────────────────────────────
+// ── Resize handle ──────────────────────────────────────────────────
+function makeHandle(orientation, prev, next) {
+  const h = document.createElement('div');
+  h.className = `resize-handle resize-handle-${orientation}`;
+  h.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const isCol = orientation === 'col';         // vertical bar → horizontal drag → column widths
+    const axis  = isCol ? 'clientX' : 'clientY';
+    const start = e[axis];
+    const prevPx = isCol ? prev.offsetWidth  : prev.offsetHeight;
+    const nextPx = isCol ? next.offsetWidth  : next.offsetHeight;
+    const total  = prevPx + nextPx;
+
+    h.classList.add('dragging');
+    document.body.style.cursor = isCol ? 'col-resize' : 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    function onMove(ev) {
+      const delta = ev[axis] - start;
+      const newPrev = Math.max(MIN_SIZE, Math.min(total - MIN_SIZE, prevPx + delta));
+      const newNext = total - newPrev;
+      // flex-grow doubles as our size unit — the actual pixel widths only
+      // depend on the ratio between siblings, so raw px numbers work fine.
+      prev.style.flex = `${newPrev} 1 0`;
+      next.style.flex = `${newNext} 1 0`;
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      h.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      persistSizes();
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  return h;
+}
+
+function persistSizes() {
+  // Read the flex-grow values back from the DOM into state.
+  const cols = layoutEl.querySelectorAll(':scope > .layout-column');
+  state.columnSizes = Array.from(cols).map(c => parseFloat(c.style.flex) || 1);
+  PANEL_IDS.forEach(id => {
+    const p = document.getElementById(id);
+    if (p) state.panelSizes[id] = parseFloat(p.style.flex) || 1;
+  });
+  save();
+}
+
+// ── Docking (drag panel-header, drop on panel edge) ────────────────
 function wire(panel) {
   const header = panel.querySelector('.panel-header');
   if (!header) return;
@@ -127,8 +228,7 @@ function wire(panel) {
   header.addEventListener('dragstart', e => {
     draggedId = panel.id;
     e.dataTransfer.effectAllowed = 'move';
-    // Firefox requires setData or the drag doesn't start.
-    e.dataTransfer.setData('text/plain', panel.id);
+    e.dataTransfer.setData('text/plain', panel.id);   // Firefox requires setData
     panel.classList.add('dragging');
   });
 
@@ -140,16 +240,14 @@ function wire(panel) {
 
   panel.addEventListener('dragover', e => {
     if (!draggedId || draggedId === panel.id) return;
-    e.preventDefault();                          // required to allow drop
+    e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     const side = nearestEdge(e.clientX, e.clientY, panel.getBoundingClientRect());
     clearAllIndicators();
-    setDropIndicator(panel, side);
+    panel.dataset.dropSide = side;
   });
 
   panel.addEventListener('dragleave', e => {
-    // Only clear when the cursor truly leaves the panel (dragleave fires
-    // on transitions into child elements too).
     if (!panel.contains(e.relatedTarget)) delete panel.dataset.dropSide;
   });
 

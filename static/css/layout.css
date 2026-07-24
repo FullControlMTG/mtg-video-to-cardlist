@@ -11,8 +11,6 @@
 
 .layout {
   display: flex;
-  gap: 1px;
-  background: var(--border);
   height: calc(100vh - var(--header-h));
   height: calc(100dvh - var(--header-h));
   overflow: hidden;
@@ -23,8 +21,6 @@
   flex-direction: column;
   flex: 1;
   min-width: 0;
-  gap: 1px;
-  background: var(--border);
 }
 
 .panel {
@@ -37,6 +33,56 @@
   min-width: 0;
   background: var(--bg);
 }
+
+/* Resize handles between adjacent columns / panels. Interactive dividers —
+   drag to change the flex-grow ratio of the two elements on either side.
+   The hit area is 12px so it's easy to grab; the negative margin pulls
+   that hit area into the neighbouring panels' edges so hovering the top
+   or bottom of a stacked panel (or the left/right of a side-by-side
+   panel) gives the resize cursor before the panel-header's grab cursor
+   takes over. The actual visible divider is a 4px bar drawn by ::before
+   so the extended hit area stays invisible. */
+.resize-handle {
+  position: relative;
+  flex-shrink: 0;
+  background: transparent;
+  z-index: 5;
+}
+.resize-handle-col {
+  width: 12px;
+  margin: 0 -4px;
+  cursor: col-resize;
+}
+.resize-handle-row {
+  /* Row handle is chunkier than col handle because it only spans a
+     column's width, not the full pane height — smaller aiming strip,
+     so needs a taller hit zone. -6px margin means the top 6px of the
+     lower panel and bottom 6px of the upper panel both trigger the
+     resize cursor before the panel-header's grab cursor takes over. */
+  height: 18px;
+  margin: -6px 0;
+  cursor: row-resize;
+}
+.resize-handle::before {
+  content: '';
+  position: absolute;
+  background: var(--border);
+  transition: background 0.15s;
+}
+.resize-handle-col::before {
+  top: 0; bottom: 0;
+  left: 50%;
+  width: 4px;
+  transform: translateX(-50%);
+}
+.resize-handle-row::before {
+  left: 0; right: 0;
+  top: 50%;
+  height: 4px;
+  transform: translateY(-50%);
+}
+.resize-handle:hover::before,
+.resize-handle.dragging::before { background: var(--accent); }
 #panel-deck { background: var(--surface); }
 
 .panel-header {
