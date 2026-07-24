@@ -6,7 +6,10 @@
 .layout {
   display: grid;
   grid-template-columns: 1fr var(--sidebar-w);
+  /* dvh accounts for mobile browser chrome (URL bar showing/hiding) so
+     the layout doesn't jump. Fallback to vh on browsers without dvh. */
   height: calc(100vh - var(--header-h));
+  height: calc(100dvh - var(--header-h));
   overflow: hidden;
 }
 .layout.deck-hidden { grid-template-columns: 1fr var(--sidebar-collapsed-w); }
