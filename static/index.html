@@ -33,66 +33,55 @@
   </div>
 </header>
 
+<!--
+  Docking layout: three sibling .panel elements. On boot, layout.js
+  reparents them into .layout-column wrappers based on the stored
+  columns model (default: video+detected in the left column, deck in
+  the right). Dragging a panel-header and dropping onto another
+  panel's edge inserts the dragged panel on that side. No wrapper
+  .pane / *-section divs — layout structure is entirely JS-driven
+  and CSS-flex-driven.
+-->
 <main class="layout" id="layout">
 
-  <!-- Left pane: video feed + detected cards -->
-  <div class="pane pane-left">
-    <section class="video-section">
-      <div class="section-title">
-        Live Scan
-        <span class="badge" id="cam-status" title="Camera connection state">camera: …</span>
-        <span class="badge pulsing" id="scan-badge">scanning…</span>
-        <button class="btn-ghost btn-rotate" id="rotate-btn" title="Rotate camera feed 90°">&#8635;</button>
-        <button class="btn-ghost btn-rotate" id="layout-mode-btn"
-                title="Switch to side-by-side layout"
-                aria-label="Toggle stacked / side-by-side layout">&#8646;</button>
-      </div>
-      <div class="video-wrapper">
-        <img id="video-feed" src="/video" alt="Video feed" />
-      </div>
-    </section>
-
-    <section class="detected-section">
-      <div class="section-title">
-        Detected This Session
-        <button class="btn-ghost" id="clear-detected-btn">Clear All</button>
-      </div>
-      <div class="detected-grid" id="detected-grid">
-        <p class="empty-hint">Cards recognised by the camera will appear here.</p>
-      </div>
-    </section>
-  </div>
-
-  <!-- Right pane: decklist. When .layout.deck-hidden is set, the column
-       narrows to a vertical strip and only the .deck-reopen button shows. -->
-  <aside class="pane pane-right" id="pane-right" aria-label="Decklist">
-
-    <button class="deck-reopen" id="show-deck-btn" title="Show decklist">&#9664; Decklist</button>
-
-    <div class="deck-header">
-      <div class="deck-header-row deck-header-top">
-        <span class="deck-name" id="deck-name-display">Decklist</span>
-        <div class="deck-header-actions">
-          <button class="btn-icon" id="settings-btn" title="Deck settings">&#9881;</button>
-          <button class="btn-icon" id="toggle-deck-btn" title="Hide decklist">&#9654;</button>
-        </div>
-      </div>
-      <div class="deck-header-row">
-        <span class="deck-counts">
-          <span id="main-count">0</span> main &nbsp;/&nbsp; <span id="side-count">0</span> side
-        </span>
-      </div>
-      <div class="deck-header-row deck-tabs-row">
-        <button class="zone-tab active" data-zone="main">Main</button>
-        <button class="zone-tab" data-zone="side">Sideboard</button>
-      </div>
+  <section class="panel" id="panel-video">
+    <header class="panel-header" draggable="true">
+      <span class="panel-title">Live Scan</span>
+      <span class="badge" id="cam-status" title="Camera connection state">camera: …</span>
+      <span class="badge pulsing" id="scan-badge">scanning…</span>
+      <button class="btn-ghost btn-rotate" id="rotate-btn" title="Rotate camera feed 90°">&#8635;</button>
+    </header>
+    <div class="video-wrapper">
+      <img id="video-feed" src="/video" alt="Video feed" />
     </div>
+  </section>
 
+  <section class="panel" id="panel-detected">
+    <header class="panel-header" draggable="true">
+      <span class="panel-title">Detected This Session</span>
+      <button class="btn-ghost" id="clear-detected-btn">Clear All</button>
+    </header>
+    <div class="detected-grid" id="detected-grid">
+      <p class="empty-hint">Cards recognised by the camera will appear here.</p>
+    </div>
+  </section>
+
+  <aside class="panel" id="panel-deck" aria-label="Decklist">
+    <header class="panel-header" draggable="true">
+      <span class="panel-title panel-title-lg" id="deck-name-display">Decklist</span>
+      <button class="btn-icon" id="settings-btn" title="Deck settings">&#9881;</button>
+    </header>
+    <div class="deck-counts">
+      <span id="main-count">0</span> main &nbsp;/&nbsp; <span id="side-count">0</span> side
+    </div>
+    <div class="deck-tabs">
+      <button class="zone-tab active" data-zone="main">Main</button>
+      <button class="zone-tab" data-zone="side">Sideboard</button>
+    </div>
     <div class="decklist-scroll" id="decklist-scroll">
       <div id="decklist-main" class="decklist-zone"></div>
       <div id="decklist-side" class="decklist-zone" hidden></div>
     </div>
-
     <div class="export-bar">
       <span class="export-label">Export</span>
       <button class="btn-export" data-fmt="moxfield">Moxfield</button>

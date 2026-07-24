@@ -1,93 +1,89 @@
-/* Two-column app grid: camera/detected pane on the left, deck sidebar
-   on the right. When `.deck-hidden` is on the layout, the right column
-   narrows from --sidebar-w to --sidebar-collapsed-w and the sidebar
-   shows only its reopen button. */
+/* Edge-based docking layout.
+ *
+ * .layout is a horizontal flex row of .layout-column elements; each
+ * column is a vertical flex column of .panel elements. Panels reparent
+ * between columns on drop (see layout.js). The 1px gaps show the
+ * --border colour through so you get thin divider lines between panels
+ * without adding explicit borders.
+ *
+ * Drop indicator: setting data-drop-side="left|right|top|bottom" on a
+ * panel paints an accent-coloured 8px bar on that edge via ::after. */
 
 .layout {
-  display: grid;
-  grid-template-columns: 1fr var(--sidebar-w);
-  /* dvh accounts for mobile browser chrome (URL bar showing/hiding) so
-     the layout doesn't jump. Fallback to vh on browsers without dvh. */
+  display: flex;
+  gap: 1px;
+  background: var(--border);
   height: calc(100vh - var(--header-h));
   height: calc(100dvh - var(--header-h));
   overflow: hidden;
 }
-/* Deck sidebar collapse: the grid-column resize lives here to keep the
-   layout definition self-contained. Child visibility rules for the
-   collapsed state live in deck.css alongside the .deck-reopen tab. */
-.layout.deck-hidden { grid-template-columns: 1fr var(--sidebar-collapsed-w); }
 
-.pane {
+.layout-column {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  /* Grid items default to `min-height: auto`, which means "at least as tall
-     as content" — that lets a big inner list push past the grid track and
-     defeat overflow:hidden. Force 0 so children with overflow:auto actually
-     scroll inside their own bounds. */
-  min-height: 0;
-}
-.pane-left  { grid-column: 1; border-right: 1px solid var(--border); }
-.pane-right { grid-column: 2; background: var(--surface); border-left: 1px solid var(--border); }
-
-/* Side-by-side layout for the left pane — puts video and detected-cards
-   in adjacent columns instead of stacked. Better for portrait / vertical
-   camera feeds (iPhone Continuity) that would otherwise letterbox with
-   big black bars in the default 16:9-ish stacked wrapper. Toggle lives
-   in the Live Scan header. */
-.pane-left.side-by-side {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: 100%;
-}
-.pane-left.side-by-side .video-section {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border-right: 1px solid var(--border);
-}
-.pane-left.side-by-side .video-wrapper {
-  /* Override the stacked-mode clamp so the wrapper fills its column's
-     full remaining height, letting portrait feeds use the vertical
-     space instead of leaving horizontal letterboxing. */
-  height: auto;
   flex: 1;
-  min-height: 0;
-  max-height: none;
-}
-.pane-left.side-by-side .detected-section {
-  border-left: 0;   /* the .video-section's border-right handles the divider */
+  min-width: 0;
+  gap: 1px;
+  background: var(--border);
 }
 
-/* Section title used inside both panes (e.g. "Live Scan", "Detected…"). */
-.section-title {
+.panel {
+  position: relative;         /* for the drop-indicator ::after */
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+}
+#panel-deck { background: var(--surface); }
+
+.panel-header {
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  cursor: grab;
+  user-select: none;
+}
+.panel-header:active { cursor: grabbing; }
+
+.panel-title {
+  flex: 1;
+  min-width: 0;
   font-weight: 600;
   font-size: 0.82rem;
   text-transform: uppercase;
   letter-spacing: 0.8px;
   color: var(--text-muted);
-  padding: 10px 16px;
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Deck title is user-set free text, so don't uppercase it. */
+.panel-title-lg {
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
 }
 
-/* Narrow-screen fallback: stack panes vertically inside the same viewport
-   budget as the desktop layout. Uses grid-row fractions so the two panes
-   share the available height — the previous version set 65vh + 60vh which
-   totalled 125vh and caused a page-level scroll on top of pane scrolls. */
-@media (max-width: 768px) {
-  .layout {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 1fr;
-  }
-  /* Collapsing the sidebar on top of a stacked layout should shrink its
-     row, not its column. 44px is a comfortable tap target for the reopen
-     button lying horizontally along the bottom edge. */
-  .layout.deck-hidden {
-    grid-template-columns: 1fr;
-    grid-template-rows: 1fr 44px;
-  }
+/* Drag/drop feedback. */
+.panel.dragging { opacity: 0.4; }
+
+.panel[data-drop-side]::after {
+  content: '';
+  position: absolute;
+  background: var(--accent);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 10;
 }
+.panel[data-drop-side="left"]::after   { left:  0; top: 0; bottom: 0; width:  8px; }
+.panel[data-drop-side="right"]::after  { right: 0; top: 0; bottom: 0; width:  8px; }
+.panel[data-drop-side="top"]::after    { top:   0; left: 0; right: 0; height: 8px; }
+.panel[data-drop-side="bottom"]::after { bottom:0; left: 0; right: 0; height: 8px; }

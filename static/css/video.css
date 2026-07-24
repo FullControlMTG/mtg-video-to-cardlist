@@ -1,24 +1,22 @@
-/* Live camera feed section and the camera/scan badges above it. */
+/* Live camera feed wrapper (inside the video panel) and the badges
+   shown next to the panel title. */
 
-.video-section {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-}
 .video-wrapper {
   background: #000;
   display: flex;
   justify-content: center;
   align-items: center;
   overflow: hidden;
-  /* Fluid height — grows on tall monitors, shrinks on laptops, never
-     collapses to nothing. Was pinned at 340px, which wasted the top of
-     tall screens and starved the detected panel on short ones. */
-  height: clamp(180px, 35dvh, 420px);
+  /* Fill the remaining vertical space in the panel. object-fit:contain
+     on the feed keeps aspect ratio regardless of the cell's shape, so
+     both portrait iPhone feeds and landscape webcams look correct
+     depending on which docking slot the video panel is in. */
+  flex: 1;
+  min-height: 0;
 }
 #video-feed {
   max-width: 100%;
-  max-height: 100%;   /* fill the wrapper; object-fit keeps aspect ratio */
+  max-height: 100%;
   object-fit: contain;
 }
 

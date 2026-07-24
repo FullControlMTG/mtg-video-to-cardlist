@@ -1,38 +1,21 @@
-/* Right-side decklist sidebar: header (name/settings/toggle), zone tabs,
-   the scrollable list, individual deck rows, the export bar, and the
-   collapsed-state reopen tab. */
+/* Decklist panel: counts + zone tabs + scrollable list of card rows +
+   export bar. The panel-header (name + settings button) lives in the
+   shared .panel-header rules in layout.css. */
 
-.deck-header {
+.deck-counts {
+  padding: 4px 14px 8px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.deck-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.deck-header-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
-  /* Allow flex children with text-overflow:ellipsis (.deck-name) to shrink
-     below their intrinsic content width instead of pushing siblings off. */
-  min-width: 0;
-}
-.deck-header-top {
-  justify-content: space-between;
-  padding-bottom: 4px;
-}
-.deck-header-row + .deck-header-row { padding-top: 0; }
-.deck-name {
-  flex: 1;
-  min-width: 0;
-  font-weight: 700;
-  font-size: 0.9rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.deck-header-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
-.deck-counts { font-size: 0.78rem; color: var(--text-muted); }
-
-.deck-tabs-row { padding-top: 0; padding-bottom: 0; gap: 2px; }
 .zone-tab {
   padding: 5px 14px;
   border: none;
@@ -48,7 +31,7 @@
 
 .decklist-scroll {
   flex: 1;
-  min-height: 0;   /* let the deck list actually scroll instead of pushing past the pane */
+  min-height: 0;   /* let the deck list actually scroll instead of pushing past the panel */
   overflow-y: auto;
   padding: 8px 0;
 }
@@ -159,34 +142,3 @@
   transition: border-color 0.15s, background 0.15s;
 }
 .btn-export:hover { border-color: var(--accent); background: rgba(88,166,255,0.08); }
-
-/* Collapsed-state reopen tab — lives inside .pane-right, only visible
-   when .layout.deck-hidden is set. */
-.deck-reopen {
-  display: none;
-  width: 100%;
-  height: 100%;
-  writing-mode: vertical-rl;
-  text-orientation: mixed;
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  padding: 16px 0;
-  transition: color 0.15s;
-}
-.deck-reopen:hover { color: var(--accent); }
-
-.layout.deck-hidden .pane-right > .deck-header,
-.layout.deck-hidden .pane-right > .decklist-scroll,
-.layout.deck-hidden .pane-right > .export-bar { display: none; }
-.layout.deck-hidden .deck-reopen { display: block; }
-
-/* On the stacked mobile layout the sidebar becomes a bottom bar; the tab
-   text should be horizontal to match. */
-@media (max-width: 768px) {
-  .deck-reopen { writing-mode: horizontal-tb; }
-}

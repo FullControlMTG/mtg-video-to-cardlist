@@ -29,7 +29,7 @@ _ws_clients: list[WebSocket] = []
 async def lifespan(app: FastAPI):
     global scanner
 
-    asyncio.create_task(_load_scryfall())
+    scryfall_task = asyncio.create_task(_load_scryfall())
     prewarm_ocr()
 
     # Inject the per-read fuzzy matcher so the detector can vote on resolved card
@@ -38,9 +38,27 @@ async def lifespan(app: FastAPI):
     scanner = CardScanner(matcher=scryfall.match_ocr_name)
     scanner.start()
 
-    asyncio.create_task(_relay_card_events())
+    relay_task = asyncio.create_task(_relay_card_events())
 
     yield
+
+    # Ordered shutdown so pending tasks don't spill "Task was destroyed
+    # while pending" warnings after the event loop closes.
+    for t in (relay_task, scryfall_task):
+        t.cancel()
+        try:
+            await t
+        except (asyncio.CancelledError, Exception):
+            pass
+
+    # Close any still-connected websocket clients so uvicorn's own shutdown
+    # doesn't have to force-drop them.
+    for ws in list(_ws_clients):
+        try:
+            await ws.close()
+        except Exception:
+            pass
+    _ws_clients.clear()
 
     if scanner:
         scanner.stop()
@@ -64,43 +82,44 @@ async def _relay_card_events() -> None:
     The scanner already resolved & confirmed the card name (it voted on the
     fuzzy-matched name over several reads), so there is nothing to look up here —
     we just broadcast it.
+
+    Uses non-blocking `get_nowait` + a short async sleep instead of
+    `run_in_executor(get)` so shutdown doesn't leave a blocking thread-pool
+    call holding an unretrieved `queue.Empty` after the coroutine is
+    cancelled.
     """
-    loop = asyncio.get_event_loop()
-    while True:
-        if not scanner:
-            await asyncio.sleep(0.5)
-            continue
-        try:
-            det = await loop.run_in_executor(
-                None, lambda: scanner.detection_queue.get(timeout=0.3)
-            )
-        except queue.Empty:
-            continue  # no confirmed detections this interval — expected
-        except Exception:
-            log.exception("Error reading detection queue; retrying.")
-            await asyncio.sleep(0.05)
-            continue
+    try:
+        while True:
+            det = None
+            if scanner is not None:
+                try:
+                    det = scanner.detection_queue.get_nowait()
+                except queue.Empty:
+                    pass
+                except Exception:
+                    log.exception("Error reading detection queue; retrying.")
 
-        if not _ws_clients:
-            continue
+            if det and _ws_clients:
+                payload = json.dumps({
+                    "type": "detected",
+                    "cards": [{
+                        "name": det.name,
+                        "confidence": round(det.confidence, 3),
+                    }],
+                })
+                dead: list[WebSocket] = []
+                for ws in _ws_clients:
+                    try:
+                        await ws.send_text(payload)
+                    except Exception as exc:
+                        log.debug("Dropping WS client after failed detected send: %s", exc)
+                        dead.append(ws)
+                for ws in dead:
+                    _ws_clients.remove(ws)
 
-        payload = json.dumps({
-            "type": "detected",
-            "cards": [{
-                "name": det.name,
-                "confidence": round(det.confidence, 3),
-            }],
-        })
-
-        dead: list[WebSocket] = []
-        for ws in _ws_clients:
-            try:
-                await ws.send_text(payload)
-            except Exception as exc:
-                log.debug("Dropping WS client after failed detected send: %s", exc)
-                dead.append(ws)
-        for ws in dead:
-            _ws_clients.remove(ws)
+            await asyncio.sleep(0.05)   # ~20 Hz poll — cheap under GIL
+    except asyncio.CancelledError:
+        return
 
 
 @app.get("/", response_class=HTMLResponse)

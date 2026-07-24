@@ -1,15 +1,5 @@
 /* Grid of cards the scanner has recognised this session. */
 
-.detected-section {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  /* min-height:0 is required so this flex child can actually be shorter
-     than its content — without it, `flex:1` behaves like `flex:1 1 auto`
-     for sizing and the grid below pushes past the pane instead of scrolling. */
-  min-height: 0;
-  overflow: hidden;
-}
 .detected-grid {
   display: flex;
   flex-wrap: wrap;
