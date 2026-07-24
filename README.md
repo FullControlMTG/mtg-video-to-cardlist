@@ -48,6 +48,8 @@ python main.py
 The browser opens automatically at `http://127.0.0.1:8000`.
 On first run, Scryfall bulk data downloads in the background — the UI is usable immediately while it loads.
 
+**After code changes:** restart the server (Ctrl+C, `python main.py`) *and* hard-refresh the browser. Safari's hard refresh is **Cmd+Option+R** — Cmd+Shift+R opens Reader View, which trips people up. If a JS/CSS edit still looks stale after a hard refresh, DevTools → Network → tick "Disable caches" and refresh once with DevTools open.
+
 ---
 
 ## How the detection pipeline works
