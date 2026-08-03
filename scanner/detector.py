@@ -170,7 +170,6 @@ class CardScanner:
                 self._confirmer.add(None)
                 with self._results_lock:
                     self._overlay = ([], [], [])
-                self._log_scan_cycle(0, "", None, 0.0, None, extra=f"skipped (dark frame, stddev={frame_stddev:.1f})")
                 elapsed = time.monotonic() - iter_start
                 if elapsed < DETECT_LOOP_MIN_CYCLE:
                     time.sleep(DETECT_LOOP_MIN_CYCLE - elapsed)
@@ -238,15 +237,12 @@ class CardScanner:
         name: Optional[str],
         score: float,
         newly_confirmed: Optional[str],
-        extra: str = "",
     ) -> None:
         """One INFO line per detect cycle so it's obvious at the console what
         the pipeline saw and how the vote is trending."""
         votes = Counter(n for n in self._confirmer.recent if n)
         votes_str = " ".join(f"{k}:{v}" for k, v in votes.most_common(4)) or "-"
-        if extra:
-            step = extra
-        elif n_quads == 0:
+        if n_quads == 0:
             step = "(no quad)"
         elif not raw:
             step = "(no OCR)"
