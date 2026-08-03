@@ -95,3 +95,21 @@
   font-weight: 700;
   cursor: pointer;
 }
+
+/* Add-all feedback states: light dim while the batch POST is in flight,
+   green tick chip once that specific tile's add succeeded. */
+.detected-card.is-adding { opacity: 0.55; }
+.detected-card.is-added::after {
+  content: "✓";
+  position: absolute;
+  top: 4px; left: 4px;
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  background: rgba(46, 160, 67, 0.9);
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 20px;
+  text-align: center;
+  z-index: 2;
+  animation: card-pop 0.25s ease;
+}

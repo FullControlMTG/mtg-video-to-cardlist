@@ -5,20 +5,28 @@
 import { $, escHtml } from './dom.js';
 import { state } from './state.js';
 import { api } from './api.js';
-import { addCard } from './deck.js';
+import { addCard, addManyOnce } from './deck.js';
+
+// If you don't see this line in the console on page load, your browser
+// is serving a cached older detected.js — Add All won't have its click
+// handler bound. Bust cache (DevTools → Network → Disable cache → reload).
+console.log('[detected.js] loaded with add-all support');
 
 const detectedGrid = $('detected-grid');
 const scanBadge    = $('scan-badge');
+const addAllBtn    = $('add-all-detected-btn');
 
 const EMPTY_HINT = '<p class="empty-hint">Cards recognised by the camera will appear here.</p>';
 
 // Update the scan badge text and toggle the pulse animation. Pulse only
 // while we're actively awaiting a scan (empty grid); once cards land the
-// badge shows a stable count.
+// badge shows a stable count. Also gates the "Add All" button — no cards,
+// nothing to add.
 function updateScanBadge() {
   const n = state.detectedCards.size;
   scanBadge.textContent = n ? `${n} found` : 'scanning…';
   scanBadge.classList.toggle('pulsing', n === 0);
+  addAllBtn.disabled = n === 0;
 }
 
 export async function handleDetected(cards) {
@@ -102,4 +110,54 @@ $('clear-detected-btn').addEventListener('click', () => {
   state.detectedCards.clear();
   detectedGrid.innerHTML = EMPTY_HINT;
   updateScanBadge();
+});
+
+// Add-all: one copy of every detected card, in parallel, into the active
+// zone. Common flow for singleton decks — scan a batch, click once.
+// Marks each corresponding tile with a "✓ added" state so the user can
+// tell what landed vs. what came in after the click; doesn't clear the
+// panel automatically (that's what Clear All is for).
+addAllBtn.addEventListener('click', async () => {
+  const names = [...state.detectedCards.keys()];
+  console.log('[add-all] click; detectedCards=', names, 'zone=', state.activeZone);
+  if (!names.length) return;
+
+  addAllBtn.disabled = true;
+  const originalLabel = addAllBtn.textContent;
+  addAllBtn.textContent = `Adding ${names.length}…`;
+
+  // Walk the grid once and index tiles by their data-name — safer than
+  // building a querySelector from arbitrary card names, which can produce
+  // unusable selectors for names with quotes / commas / punctuation.
+  const tilesAtClick = new Map();
+  for (const tile of detectedGrid.querySelectorAll('.detected-card')) {
+    const n = tile.dataset.name;
+    if (state.detectedCards.has(n)) {
+      tilesAtClick.set(n, tile);
+      tile.classList.add('is-adding');
+    }
+  }
+
+  let ok = 0, failed = [];
+  try {
+    const res = await addManyOnce(names, state.activeZone, 1);
+    ok = res.ok;
+    failed = res.failed;
+  } catch (err) {
+    console.error('[add-all] addManyOnce threw:', err);
+    failed = names.slice();
+  }
+
+  for (const [n, tile] of tilesAtClick) {
+    tile.classList.remove('is-adding');
+    if (!failed.includes(n)) tile.classList.add('is-added');
+  }
+
+  addAllBtn.textContent = failed.length
+    ? `Added ${ok}, ${failed.length} failed`
+    : `✓ Added ${ok}`;
+  setTimeout(() => {
+    addAllBtn.textContent = originalLabel;
+    updateScanBadge();  // re-enables if there are still cards left
+  }, 1400);
 });

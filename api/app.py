@@ -65,7 +65,23 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="MTG Card Scanner", version="1.0.0", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+class NoCacheStaticFiles(StaticFiles):
+    """StaticFiles that tells the browser to always revalidate. Without this,
+    FastAPI serves static assets without a Cache-Control header, and browsers
+    fall back to heuristic caching (serving from disk cache without checking
+    with the server) — which reliably surfaces as "why doesn't my JS change
+    take effect after reload?" during development. `no-cache` still allows a
+    cached copy but forces an If-None-Match / If-Modified-Since roundtrip, so
+    unchanged assets return 304 (fast) and changed ones return the new bytes."""
+    async def get_response(self, path, scope):
+        resp = await super().get_response(path, scope)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
+app.mount("/static", NoCacheStaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 async def _load_scryfall() -> None:

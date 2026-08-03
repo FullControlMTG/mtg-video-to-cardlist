@@ -41,6 +41,31 @@ export async function addCard(name, count = 1, zone = 'main') {
   }
 }
 
+// Bulk-add helper for "Add All" from the detected panel. Fires all POSTs
+// in parallel and reloads the deck ONCE at the end — 12 sequential
+// addCard() calls would trigger 12 deck refreshes for no benefit.
+// Returns { ok, failed } where failed is the list of names that errored.
+export async function addManyOnce(names, zone = 'main', count = 1) {
+  if (!names.length) return { ok: 0, failed: [] };
+  const results = await Promise.all(names.map(async n => {
+    try {
+      const resp = await api.addCard(n, count, zone);
+      if (!resp.ok) {
+        // Read the body so we can see WHY (422 validation, 500 crash, …).
+        const body = await resp.text().catch(() => '<no body>');
+        console.error(`[add-all] POST /api/cards ${resp.status} for ${JSON.stringify(n)}: ${body}`);
+      }
+      return { n, ok: resp.ok, status: resp.status };
+    } catch (err) {
+      console.error(`[add-all] fetch failed for ${JSON.stringify(n)}:`, err);
+      return { n, ok: false, status: 0 };
+    }
+  }));
+  await loadDeck();
+  const failed = results.filter(r => !r.ok).map(r => r.n);
+  return { ok: results.length - failed.length, failed };
+}
+
 function renderZone(zone, entries) {
   const el = zone === 'main' ? deckMain : deckSide;
 
