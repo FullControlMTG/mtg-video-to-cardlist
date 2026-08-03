@@ -6,6 +6,11 @@ DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(exist_ok=True)
 
 CARD_NAMES_FILE = DATA_DIR / "card_names.json"
+# Cards discovered at runtime via the live Scryfall fallback (missing from
+# whatever bulk snapshot is in card_names.json). Loaded alongside the bulk
+# and grown one card at a time — survives restarts, ages out naturally as
+# the bulk gets refreshed.
+CARD_NAMES_GROWN_FILE = DATA_DIR / "card_names_grown.json"
 DECKLIST_FILE = DATA_DIR / "decklist.json"
 
 # Scryfall
@@ -53,8 +58,25 @@ NAME_COL_FRACTION = 0.85  # Left fraction (width) — long enough for long card 
 # same card name wins M of the most recent N reads. Because the fuzzy match
 # corrects per-read noise, agreement converges in just a few frames, so this is
 # both fast and accurate. No artificial waits.
-CONFIRM_WINDOW_SIZE = 4          # N — most-recent frames considered in the vote
+CONFIRM_WINDOW_SIZE = 8          # N — most-recent frames considered in the vote
 CONFIRM_MIN_MATCH = 2            # M — frames that must resolve to the SAME card name to confirm
+
+# Frame-level "is there anything to look at" gate. A camera pointed at the
+# black table with the lens covered still produces noise contours that get
+# OCR'd into garbage. This threshold is the minimum standard deviation of
+# pixel intensities across the greyscale frame — a truly black/uniform
+# frame is < 5; a scene with any real content is > 20. Frames below this
+# skip detection entirely and record an absent vote.
+MIN_FRAME_STDDEV = 8.0
+# The detect loop is paced (see DETECT_LOOP_MIN_CYCLE below) so one add() call
+# happens per cycle whether OCR ran or not — the vote rate is uniform, so a
+# small window like 8 covers ~1.6 s of decision history evenly.
+
+# Detect loop pacing: minimum seconds per iteration. OCR takes ~200 ms and
+# hits this naturally; the fast no-quad path is padded to match, so we don't
+# flood the Confirmer with rapid `None` votes that would age real matches
+# out of the window before their partner arrives.
+DETECT_LOOP_MIN_CYCLE = 0.2
 
 # OCR / matching
 # Engine for reading the name strip:
@@ -71,6 +93,14 @@ OCR_ENGINE = "readtext"
 OCR_MIN_CONFIDENCE = 0.25        # Minimum EasyOCR confidence to use a result
 FUZZY_MATCH_THRESHOLD = 72       # RapidFuzz score (0-100) to accept a name match
 MAX_DETECTED_DISPLAY = 8         # Max simultaneously-shown detected cards in UI
+
+# Live Scryfall fallback: when the local fuzzy match fails, the matcher
+# hits Scryfall's /cards/named?fuzzy= endpoint synchronously (one HTTP
+# call), caches the result in memory, and appends any new hit to
+# CARD_NAMES_GROWN_FILE so we never re-fetch it. Rate-limited to be
+# polite to Scryfall (they recommend ≥50 ms between calls; we use 120).
+LIVE_MATCH_MIN_INTERVAL = 0.12   # seconds between successive live Scryfall calls
+LIVE_MATCH_TIMEOUT = 5.0         # sync HTTP timeout for the live fallback
 
 # Server
 HOST = "127.0.0.1"

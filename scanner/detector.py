@@ -20,6 +20,7 @@ import logging
 import queue
 import threading
 import time
+from collections import Counter
 from typing import Callable, Generator, Optional
 
 import cv2
@@ -28,7 +29,9 @@ import numpy as np
 from config import (
     CARD_BORDER_MARGIN,
     CARD_TOP_EXTRA,
+    DETECT_LOOP_MIN_CYCLE,
     JPEG_QUALITY,
+    MIN_FRAME_STDDEV,
     VIDEO_SOURCE,
 )
 
@@ -139,28 +142,52 @@ class CardScanner:
         """Detect → OCR the single most prominent card → match → vote → emit.
 
         Only the LARGEST quad is OCR'd (the card being presented on top of the
-        stack), so we run OCR once per frame instead of once per detected box —
-        the big speed win. The matched name feeds one global vote (jitter-proof).
-        The only wait is a tiny yield when the camera has no new frame yet.
+        stack), so we run OCR once per frame instead of once per detected box.
+        The matched name feeds one global vote (jitter-proof).
+
+        Each iteration is paced to at least DETECT_LOOP_MIN_CYCLE seconds so
+        that whether we ran OCR (~200 ms) or fast-failed with no quad (~5 ms)
+        the Confirmer sees ONE add() per cycle. Without pacing, no-quad frames
+        would flood the vote with None at ~30 Hz and age real matches out of
+        the window before the next one arrived.
         """
         last_id = -1
         while self._running:
+            iter_start = time.monotonic()
+
             frame, fid = self._camera.latest()
             if frame is None or fid == last_id:
-                time.sleep(0.002)  # wait briefly for the next camera frame
+                time.sleep(0.005)  # wait briefly for the next camera frame
                 continue
             last_id = fid
+
+            # Cheap "is there anything to see?" gate. A dark/covered camera
+            # still produces edge-noise contours that OCR into garbage; skip
+            # the whole detection pass on frames below the stddev threshold.
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            frame_stddev = float(gray.std())
+            if frame_stddev < MIN_FRAME_STDDEV:
+                self._confirmer.add(None)
+                with self._results_lock:
+                    self._overlay = ([], [], [])
+                self._log_scan_cycle(0, "", None, 0.0, None, extra=f"skipped (dark frame, stddev={frame_stddev:.1f})")
+                elapsed = time.monotonic() - iter_start
+                if elapsed < DETECT_LOOP_MIN_CYCLE:
+                    time.sleep(DETECT_LOOP_MIN_CYCLE - elapsed)
+                continue
 
             raw_lines, quads = detect_card_candidates(frame)
             overlay: list[DetectedCard] = []
             confirmed_name: Optional[str] = None
+            raw = ""
+            name: Optional[str] = None
+            score = 0.0
 
             if quads:
                 # The presented (top) card is the largest valid quad.
                 largest = max(quads, key=lambda q: cv2.contourArea(q.astype(np.float32)))
                 ocr_quad = expand_quad(largest, CARD_BORDER_MARGIN, CARD_TOP_EXTRA)
 
-                raw = ""
                 try:
                     raw = ocr_name_strip(four_point_transform(frame, ocr_quad))
                 except cv2.error as exc:
@@ -168,10 +195,9 @@ class CardScanner:
                 except Exception as exc:  # OCR is third-party — never kill the loop
                     log.warning("OCR failed: %s", exc)
 
-                name = None
                 if raw and self._matcher is not None:
                     try:
-                        name, _score = self._matcher(raw)
+                        name, score = self._matcher(raw)
                     except Exception as exc:
                         log.warning("Card match failed for %r: %s", raw, exc)
 
@@ -184,7 +210,9 @@ class CardScanner:
                     card_image=_EMPTY_IMG,
                 ))
             else:
-                self._confirmer.add(None)  # no card this frame — ages the window
+                self._confirmer.add(None)  # no card this cycle — ages the window
+
+            self._log_scan_cycle(len(quads), raw, name, score, confirmed_name)
 
             with self._results_lock:
                 self._overlay = (raw_lines, quads, overlay)
@@ -196,7 +224,43 @@ class CardScanner:
                 except queue.Full:
                     log.warning("Detection queue full; dropping confirmed %r", confirmed_name)
 
+            # Pace the loop. OCR path already exceeds the cycle time; the
+            # no-quad fast path is padded so add() rate stays uniform.
+            elapsed = time.monotonic() - iter_start
+            if elapsed < DETECT_LOOP_MIN_CYCLE:
+                time.sleep(DETECT_LOOP_MIN_CYCLE - elapsed)
+
     # ── helpers ──────────────────────────────────────────────────────────
+    def _log_scan_cycle(
+        self,
+        n_quads: int,
+        raw: str,
+        name: Optional[str],
+        score: float,
+        newly_confirmed: Optional[str],
+        extra: str = "",
+    ) -> None:
+        """One INFO line per detect cycle so it's obvious at the console what
+        the pipeline saw and how the vote is trending."""
+        votes = Counter(n for n in self._confirmer.recent if n)
+        votes_str = " ".join(f"{k}:{v}" for k, v in votes.most_common(4)) or "-"
+        if extra:
+            step = extra
+        elif n_quads == 0:
+            step = "(no quad)"
+        elif not raw:
+            step = "(no OCR)"
+        elif name is None:
+            step = f"raw={raw!r} → (no match)"
+        else:
+            step = f"raw={raw!r} → {name!r} ({score:.2f})"
+        star = "  ★ NEW CONFIRM" if newly_confirmed else ""
+        log.info(
+            "scan | %s | vote=%s | cand=%s conf=%s%s",
+            step, votes_str, self._confirmer.candidate,
+            self._confirmer.confirmed, star,
+        )
+
     def _publish(self, jpeg: bytes) -> None:
         try:
             self.frame_queue.put_nowait(jpeg)
