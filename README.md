@@ -29,7 +29,7 @@ Point a webcam at your Magic: The Gathering cards and watch them build your deck
 
 ## Setup
 
-**Requirements:** [uv](https://docs.astral.sh/uv/), a webcam, ~500 MB disk (models + Scryfall cache). `uv venv` uses the Python version in `.python-version` (3.13.3) and downloads it if needed.
+**Requirements:** [uv](https://docs.astral.sh/uv/), a webcam, ~500 MB disk (models + Scryfall cache). `uv sync` uses the Python version in `.python-version` (3.13.3) and downloads it if needed.
 
 ```bash
 # 1. Clone
@@ -37,25 +37,24 @@ git clone <repo-url>
 cd mtg-video-to-cardlist
 
 # 2. Create environment
-uv venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-uv pip sync requirements.txt
+uv sync
 
 # 3. Run
-python main.py
+uv run main.py
 ```
 
-`requirements.txt` is a generated lockfile with exact versions and hashes, so don't edit it by hand. To change dependencies, edit `requirements.in`, then regenerate the lockfile and sync:
+Dependencies are declared in `pyproject.toml`, and `uv.lock` pins their exact versions and hashes. Commit both, and don't edit `uv.lock` by hand. To change dependencies:
 
 ```bash
-uv pip compile requirements.in -o requirements.txt --universal --generate-hashes --python-version 3.13
-uv pip sync requirements.txt
+uv add <package>        # or: uv remove <package>
+uv lock --upgrade       # move everything to the newest allowed versions
+uv sync
 ```
 
 The browser opens automatically at `http://127.0.0.1:8000`.
 On first run, Scryfall bulk data downloads in the background — the UI is usable immediately while it loads.
 
-**After code changes:** restart the server (Ctrl+C, `python main.py`) *and* hard-refresh the browser. Safari's hard refresh is **Cmd+Option+R** — Cmd+Shift+R opens Reader View, which trips people up. If a JS/CSS edit still looks stale after a hard refresh, DevTools → Network → tick "Disable caches" and refresh once with DevTools open.
+**After code changes:** restart the server (Ctrl+C, `uv run main.py`) *and* hard-refresh the browser. Safari's hard refresh is **Cmd+Option+R** — Cmd+Shift+R opens Reader View, which trips people up. If a JS/CSS edit still looks stale after a hard refresh, DevTools → Network → tick "Disable caches" and refresh once with DevTools open.
 
 ---
 

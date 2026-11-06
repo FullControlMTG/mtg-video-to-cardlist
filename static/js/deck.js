@@ -8,11 +8,13 @@ import { state } from './state.js';
 import { api } from './api.js';
 import { openCardModal } from './modal.js';
 import { promptNumber } from './prompt.js';
+import { hideCardPreview } from './card-preview.js';
 
-const deckMain  = $('decklist-main');
-const deckSide  = $('decklist-side');
-const mainCount = $('main-count');
-const sideCount = $('side-count');
+const deckMain   = $('decklist-main');
+const deckSide   = $('decklist-side');
+const deckScroll = $('decklist-scroll');
+const mainCount  = $('main-count');
+const sideCount  = $('side-count');
 
 export async function loadDeck() {
   const data = await api.getDeck();
@@ -20,11 +22,25 @@ export async function loadDeck() {
 }
 
 export function applyDeckUpdate(data) {
+  // Only follow new rows if the user was already near the bottom — don't yank
+  // them away from an earlier card they might be inspecting.
+  const wasAtBottom =
+    deckScroll.scrollHeight - deckScroll.scrollTop - deckScroll.clientHeight < 40;
+
   state.deck = data;
+  hideCardPreview();
   renderZone('main', data.main || []);
   renderZone('side', data.side || []);
   mainCount.textContent = data.total_main || 0;
   sideCount.textContent = data.total_side || 0;
+
+  if (wasAtBottom) deckScroll.scrollTop = deckScroll.scrollHeight;
+}
+
+async function changeDeck(request) {
+  const resp = await request;
+  if (!resp.ok) console.error('Deck change failed:', resp.status, await resp.text());
+  await loadDeck();
 }
 
 export async function addCard(name, count = 1, zone = 'main') {
@@ -85,7 +101,7 @@ function renderZone(zone, entries) {
            src="${escHtml(e.image_uri || '')}"
            alt="${escHtml(e.name)}"
            onerror="this.style.visibility='hidden'" />
-      <div>
+      <div class="deck-row-info">
         <div class="deck-row-name">${escHtml(e.name)}</div>
         <div class="deck-row-mana">${escHtml(e.mana_cost || '')}</div>
       </div>
@@ -133,8 +149,7 @@ function renderZone(zone, entries) {
   el.querySelectorAll('.deck-row-decrement').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
-      await api.decrementOne(btn.dataset.name, btn.dataset.zone);
-      await loadDeck();
+      await changeDeck(api.decrementOne(btn.dataset.name, btn.dataset.zone));
     });
   });
 
@@ -151,8 +166,7 @@ function renderZone(zone, entries) {
         max: 99,
       });
       if (next == null || next === current) return;
-      await api.setCount(name, next, z);
-      await loadDeck();
+      await changeDeck(api.setCount(name, next, z));
     });
   });
 
@@ -160,8 +174,7 @@ function renderZone(zone, entries) {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
       // PATCH count=0 deletes the entry server-side (set_count pops at 0).
-      await api.setCount(btn.dataset.name, 0, btn.dataset.zone);
-      await loadDeck();
+      await changeDeck(api.setCount(btn.dataset.name, 0, btn.dataset.zone));
     });
   });
 }

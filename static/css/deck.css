@@ -55,6 +55,8 @@
   background: var(--bg);
   flex-shrink: 0;
 }
+/* Without this, a long name widens the grid and pushes the X out of the panel. */
+.deck-row-info { min-width: 0; }
 .deck-row-name {
   font-size: 0.85rem;
   font-weight: 500;

@@ -223,7 +223,7 @@ async def add_card(req: AddCardRequest):
     return entry.to_dict()
 
 
-@app.patch("/api/cards/{name}")
+@app.patch("/api/cards/{name:path}")
 async def patch_card(name: str, req: PatchCardRequest):
     if req.zone is not None:
         zone: Zone = req.zone
@@ -241,7 +241,7 @@ async def patch_card(name: str, req: PatchCardRequest):
     return entry.to_dict() if entry else {"removed": True}
 
 
-@app.delete("/api/cards/{name}")
+@app.delete("/api/cards/{name:path}")
 async def remove_card(
     name: str,
     count: int = Query(default=1, ge=1),

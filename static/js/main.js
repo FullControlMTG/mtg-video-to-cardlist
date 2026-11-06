@@ -6,6 +6,7 @@ import './deck.js';        // renderZone, addCard, zone tabs, clear button
 import './modal.js';       // card detail modal handlers
 import './search.js';      // search input + dropdown
 import './detected.js';    // detected-cards panel + clear button
+import './card-preview.js'; // large image on card hover
 import './export.js';      // export modal + format buttons
 import './settings.js';    // deck settings modal
 import './help.js';        // help modal

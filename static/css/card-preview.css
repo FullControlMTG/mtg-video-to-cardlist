@@ -1,0 +1,13 @@
+/* Large card image shown while hovering a decklist row or detected card. */
+
+.card-preview {
+  position: fixed;
+  z-index: var(--z-dropdown);
+  width: min(340px, 40vw, calc((100vh - 16px) * 0.715));
+  aspect-ratio: 0.715;
+  border-radius: 4.75% / 3.5%;
+  background: var(--surface2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+.card-preview[hidden] { display: none; }
