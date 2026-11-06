@@ -1,0 +1,21 @@
+# Direct dependencies. Edit this file, then regenerate the lockfile:
+#
+#   uv pip compile requirements.in -o requirements.txt --universal --generate-hashes --python-version 3.13
+#
+# Install from requirements.txt, never from this file.
+
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+# Headless only: easyocr depends on it, and installing opencv-python as well
+# puts two packages in the same cv2/ directory. The app uses no OpenCV GUI calls.
+# Below 5: the full app has only been run against OpenCV 4. OpenCV 5 has already
+# broken detection once, by changing the shape HoughLinesP returns.
+opencv-python-headless>=4.10.0,<5
+easyocr>=1.7.1
+rapidfuzz>=3.10.0
+httpx>=0.27.2
+Pillow>=11.0.0
+numpy>=2.0.0
+python-multipart>=0.0.12
+jinja2>=3.1.4
+aiofiles>=24.1.0

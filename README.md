@@ -29,20 +29,27 @@ Point a webcam at your Magic: The Gathering cards and watch them build your deck
 
 ## Setup
 
-**Requirements:** Python 3.10+, a webcam, ~500 MB disk (models + Scryfall cache).
+**Requirements:** [uv](https://docs.astral.sh/uv/), a webcam, ~500 MB disk (models + Scryfall cache). `uv venv` uses the Python version in `.python-version` (3.13.3) and downloads it if needed.
 
 ```bash
 # 1. Clone
 git clone <repo-url>
 cd mtg-video-to-cardlist
 
-# 2. Create environment (uv recommended)
+# 2. Create environment
 uv venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-uv pip install -r requirements.txt
+uv pip sync requirements.txt
 
 # 3. Run
 python main.py
+```
+
+`requirements.txt` is a generated lockfile with exact versions and hashes, so don't edit it by hand. To change dependencies, edit `requirements.in`, then regenerate the lockfile and sync:
+
+```bash
+uv pip compile requirements.in -o requirements.txt --universal --generate-hashes --python-version 3.13
+uv pip sync requirements.txt
 ```
 
 The browser opens automatically at `http://127.0.0.1:8000`.

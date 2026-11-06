@@ -100,10 +100,11 @@ def _detect_lines_and_quads(
     if raw is None:
         return [], []
 
+    # OpenCV 4 returns shape (N, 1, 4) and OpenCV 5 returns (N, 4).
     segments: list[tuple] = [
         (float(x1), float(y1), float(x2), float(y2),
          segment_angle(x1, y1, x2, y2))
-        for x1, y1, x2, y2 in raw[:, 0]
+        for x1, y1, x2, y2 in raw.reshape(-1, 4)
     ]
 
     clusters = [c for c in cluster_by_angle(segments) if len(c) >= 2]

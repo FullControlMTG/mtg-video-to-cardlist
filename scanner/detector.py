@@ -175,7 +175,11 @@ class CardScanner:
                     time.sleep(DETECT_LOOP_MIN_CYCLE - elapsed)
                 continue
 
-            raw_lines, quads = detect_card_candidates(frame)
+            try:
+                raw_lines, quads = detect_card_candidates(frame)
+            except Exception:
+                log.exception("Card detection failed; skipping this frame.")
+                raw_lines, quads = [], []
             overlay: list[DetectedCard] = []
             confirmed_name: Optional[str] = None
             raw = ""
