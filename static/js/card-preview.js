@@ -3,6 +3,7 @@
 
 const GAP = 12;
 const MARGIN = 8;
+const HOVER_DELAY_MS = 600;
 
 const preview = document.createElement('img');
 preview.className = 'card-preview';
@@ -12,14 +13,15 @@ preview.addEventListener('error', hideCardPreview);
 document.body.appendChild(preview);
 
 let hovered = null;
+let showTimer = null;
 
 export function hideCardPreview() {
+  clearTimeout(showTimer);
   hovered = null;
   preview.hidden = true;
 }
 
 function showCardPreview(card, src) {
-  hovered = card;
   if (preview.getAttribute('src') !== src) preview.src = src;
   preview.hidden = false;
 
@@ -41,8 +43,10 @@ document.addEventListener('mouseover', e => {
   if (card === hovered) return;
   // e.buttons: a panel resize or text drag is passing over the cards.
   const src = card && !e.buttons ? card.querySelector('img')?.getAttribute('src') : '';
-  if (src) showCardPreview(card, src);
-  else hideCardPreview();
+  hideCardPreview();
+  if (!src) return;
+  hovered = card;
+  showTimer = setTimeout(() => showCardPreview(card, src), HOVER_DELAY_MS);
 });
 
 document.documentElement.addEventListener('mouseleave', hideCardPreview);
